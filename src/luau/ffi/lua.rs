@@ -2,7 +2,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-use std::ffi::{c_char, c_double, c_float, c_int, c_uchar, c_void};
+use libc::{c_char, c_double, c_float, c_int, c_uchar, c_void};
 use std::marker::{PhantomData, PhantomPinned};
 
 pub const LUA_REGISTRYINDEX: c_int = -8000 - 2000;
@@ -22,18 +22,6 @@ pub enum lua_Status {
 }
 
 pub use lua_Status::*;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum lua_CoStatus {
-    LUA_CORUN = 0,
-    LUA_COSUS,
-    LUA_CONOR,
-    LUA_COFIN,
-    LUA_COERR,
-}
-
-pub use lua_CoStatus::*;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -105,7 +93,12 @@ unsafe extern "C-unwind" {
         env: c_int,
     ) -> c_int;
 
-    pub fn lua_call(L: *mut lua_State, nargs: c_int, nresults: c_int);
+    pub fn lua_pcall(
+        L: *mut lua_State,
+        nargs: c_int,
+        nresults: c_int,
+        errfunc: c_int,
+    ) -> lua_Status;
 
     pub fn lua_error(L: *mut lua_State) -> !;
 
@@ -168,4 +161,6 @@ unsafe extern "C-unwind" {
     pub fn lua_userdatatag(L: *mut lua_State, idx: c_int) -> c_int;
     pub fn lua_setuserdatadtor(L: *mut lua_State, tag: c_int, dtor: lua_Destructor);
     pub fn lua_setuserdatametatable(L: *mut lua_State, tag: c_int);
+
+    pub fn lua_next(L: *mut lua_State, index: c_int) -> c_int;
 }
