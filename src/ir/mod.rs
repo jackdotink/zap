@@ -1,14 +1,13 @@
-use std::{
-    fmt::Display,
-    ops::{Add, Mul},
-};
+use std::fmt::Display;
 
 use crate::types::{NumberKind, Type};
 
 mod build;
 
-pub fn build(ty: Type) -> Block {
-    build::build(ty)
+pub use build::Check;
+
+pub fn build(ty: Type, checks: Check) -> Block {
+    build::build(ty, checks)
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +27,10 @@ impl Display for Block {
 
 #[derive(Debug, Clone)]
 pub enum Instr {
+    /// Assert that the given expression is truthy. If it is not, an error will
+    /// be thrown.
+    Assert { expr: Expr, msg: String },
+
     /// Allocate a fixed-size number of bytes. This should be used instead of
     /// `AllocD` when the size is known at compile time as it allows for the
     /// compiler to further optimize when the allocation takes place.
@@ -66,6 +69,9 @@ pub enum Instr {
     /// Assign to a variable.
     Assign { into: Var, expr: Expr },
 
+    /// Assign to the index of a variable.
+    AssignIndex { into: Var, index: Expr, expr: Expr },
+
     /// Iterate over a range.
     IterRange {
         into: Var,
@@ -86,12 +92,16 @@ pub enum Instr {
 impl Display for Instr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Instr::Assert { expr, msg } => {
+                write!(f, "if not {expr} then error(\"{msg}\") end;")?;
+            }
+
             Instr::AllocK { size } => {
-                write!(f, "if pos + {size} > size then alloc({size}) end;")?;
+                write!(f, "if pos + {size} > len then resize({size}) end;")?;
             }
 
             Instr::AllocD { size } => {
-                write!(f, "if pos + {size} > size then alloc({size}) end;")?;
+                write!(f, "if pos + {size} > len then resize({size}) end;")?;
             }
 
             Instr::ReserveK { into, size } => {
@@ -129,6 +139,10 @@ impl Display for Instr {
 
             Instr::Assign { into, expr } => {
                 write!(f, "{into} = {expr};")?;
+            }
+
+            Instr::AssignIndex { into, index, expr } => {
+                write!(f, "{into}[{index}] = {expr};")?;
             }
 
             Instr::IterRange {
@@ -238,12 +252,20 @@ pub enum Expr {
     Number(f64),
     String(String),
 
+    Table,
+    Array(Box<Expr>),
+    Struct(Vec<(String, Expr)>),
+
     Var(Var),
 
     Index(Box<Expr>, Box<Expr>),
 
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Unary(UnaryOp, Box<Expr>),
+
+    Vector(Box<Expr>, Box<Expr>, Box<Expr>),
+    Type(Box<Expr>),
+    Utf8(Box<Expr>),
 }
 
 impl From<bool> for Expr {
@@ -276,33 +298,53 @@ impl From<Var> for Expr {
     }
 }
 
-impl Add for Expr {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Expr::Binary(Box::new(self), BinaryOp::Add, Box::new(rhs))
-    }
-}
-
-impl Mul for Expr {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        Expr::Binary(Box::new(self), BinaryOp::Mul, Box::new(rhs))
-    }
-}
-
 impl Expr {
     fn index(self, index: impl Into<Expr>) -> Self {
         Expr::Index(Box::new(self), Box::new(index.into()))
     }
 
-    fn eq(self, other: impl Into<Expr>) -> Self {
-        Expr::Binary(Box::new(self), BinaryOp::Eq, Box::new(other.into()))
+    fn and(self, other: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::And, Box::new(other.into()))
+    }
+
+    fn add(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Add, Box::new(rhs.into()))
+    }
+
+    fn mul(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Mul, Box::new(rhs.into()))
+    }
+
+    fn eq(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Eq, Box::new(rhs.into()))
+    }
+
+    fn lt(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Lt, Box::new(rhs.into()))
+    }
+
+    fn gt(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Gt, Box::new(rhs.into()))
+    }
+
+    fn le(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Le, Box::new(rhs.into()))
+    }
+
+    fn ge(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Ge, Box::new(rhs.into()))
     }
 
     fn len(self) -> Self {
         Expr::Unary(UnaryOp::Len, Box::new(self))
+    }
+
+    fn ty(self) -> Self {
+        Expr::Type(Box::new(self))
+    }
+
+    fn utf8(self) -> Self {
+        Expr::Utf8(Box::new(self))
     }
 }
 
@@ -311,33 +353,60 @@ impl Display for Expr {
         match self {
             Self::Root => write!(f, "root"),
 
-            Self::Boolean(b) => write!(f, "{}", b),
-            Self::Number(n) => write!(f, "{}", n),
+            Self::Boolean(b) => write!(f, "{b}"),
+            Self::Number(n) => write!(f, "{n}"),
             Self::String(s) => write!(f, "\"{}\"", s.escape_default()),
 
-            Self::Var(v) => write!(f, "{}", v),
+            Self::Table => write!(f, "{{}}"),
+            Self::Array(expr) if matches!(**expr, Expr::Number(0.0)) => write!(f, "{{}}"),
+            Self::Array(expr) => write!(f, "table.create({expr})"),
+            Self::Struct(fields) => {
+                write!(f, "{{ ")?;
 
-            Self::Index(expr, index) => write!(f, "{}[{}]", expr, index),
+                for (name, expr) in fields {
+                    write!(f, "{name} = {expr}, ")?;
+                }
 
-            Self::Binary(lhs, op, rhs) => write!(f, "({} {} {})", lhs, op, rhs),
-            Self::Unary(op, expr) => write!(f, "({}{})", op, expr),
+                write!(f, "}}")
+            }
+
+            Self::Var(v) => write!(f, "{v}"),
+
+            Self::Index(expr, index) => write!(f, "{expr}[{index}]"),
+
+            Self::Binary(lhs, op, rhs) => write!(f, "({lhs} {op} {rhs})"),
+            Self::Unary(op, expr) => write!(f, "({op}{expr})"),
+
+            Self::Vector(x, y, z) => write!(f, "vector.create({x}, {y}, {z})"),
+            Self::Type(expr) => write!(f, "type({expr})"),
+            Self::Utf8(expr) => write!(f, "utf8.len({expr})"),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinaryOp {
+    And,
     Add,
     Mul,
     Eq,
+    Lt,
+    Gt,
+    Le,
+    Ge,
 }
 
 impl Display for BinaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::And => write!(f, "and"),
             Self::Add => write!(f, "+"),
             Self::Mul => write!(f, "*"),
             Self::Eq => write!(f, "=="),
+            Self::Lt => write!(f, "<"),
+            Self::Gt => write!(f, ">"),
+            Self::Le => write!(f, "<="),
+            Self::Ge => write!(f, ">="),
         }
     }
 }

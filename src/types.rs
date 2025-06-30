@@ -1,4 +1,19 @@
-#[derive(Debug, Clone)]
+use lu::Userdata;
+
+#[derive(Debug, Clone, Userdata)]
+pub struct Event {
+    pub from: EventFrom,
+    pub data: Vec<Type>,
+    pub reliable: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum EventFrom {
+    Server,
+    Client,
+}
+
+#[derive(Debug, Clone, Userdata)]
 pub enum Type {
     Number(NumberType),
     Vector(VectorType),

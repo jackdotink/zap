@@ -1,15 +1,16 @@
+mod api;
+mod codegen;
 mod ir;
-mod luau;
 mod types;
 
 fn main() {
-    let ty = match luau::run("return zap.u8()".as_bytes()) {
+    let ty = match api::exec(std::fs::read("test").unwrap().as_slice()) {
         Ok(ty) => ty,
         Err(e) => {
-            eprintln!("{}", e);
+            eprintln!("Error: {e}");
             return;
         }
     };
 
-    println!("Type: {:?}", ty);
+    println!("{}", ir::build(ty, ir::Check::Full));
 }
