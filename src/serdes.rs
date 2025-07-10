@@ -35,10 +35,12 @@ fn check_utf8(b: &mut Builder, expr: impl Into<Expr>) {
     b.assert(expr.into().utf8(), "not a valid utf8 string");
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum ApiCheck {
     None,
     Some,
+
+    #[default]
     Full,
 }
 

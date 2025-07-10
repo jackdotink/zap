@@ -24,7 +24,7 @@ pub fn client(c: Client, items: &[(String, Item)]) -> Result<String, std::fmt::E
     Ok(s)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Client {
     pub apicheck: serdes::ApiCheck,
     pub location: String,
