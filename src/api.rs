@@ -1,15 +1,20 @@
+use std::ops::ControlFlow;
+
+use uuid::Uuid;
+
 use crate::types::{
-    ArrayType, BinaryStringType, Event, EventFrom, MapType, NumberKind, NumberType, Range, SetType,
-    StructType, Type, Utf8StringType, VectorType,
+    ArrayType, BinaryStringType, Event, EventFrom, Item, MapType, NumberKind, NumberType, Range,
+    SetType, StructType, Type, Utf8StringType, VectorType,
 };
 
-pub fn exec(code: &[u8]) -> Result<Type, String> {
+pub fn exec(code: &[u8]) -> Result<Vec<(String, Item)>, String> {
     let compiler = lu::Compiler::default();
     let bytecode = compiler.compile(code);
 
     let mut state = lu::State::new((), lu::DefaultAllocator);
     state.open_std();
     state.open_userdata::<Type>();
+    state.open_userdata::<Event>();
     state.open_library("zap", library());
     state.sandbox();
 
@@ -26,7 +31,7 @@ pub fn exec(code: &[u8]) -> Result<Type, String> {
                 .to_str()
                 .unwrap();
 
-            Err(format!("Error: {}\nTrace: {}", error, trace))
+            Err(format!("error: {error}\ntrace: {trace}"))
         },
 
         lu::Status::Yield => unsafe {
@@ -34,17 +39,54 @@ pub fn exec(code: &[u8]) -> Result<Type, String> {
                 .to_str()
                 .unwrap();
 
-            Err(format!("Yielded: {}", trace))
+            Err(format!("yielded: {trace}"))
         },
 
-        _ => {
-            let Some(ty) = stack.to_userdata::<Type>(-1) else {
-                return Err("Expected a Type to be returned".to_string());
-            };
-
-            Ok(ty.borrow().clone())
-        }
+        _ => table_to_module(stack),
     }
+}
+
+fn table_to_module(stack: &lu::Stack<Config>) -> Result<Vec<(String, Item)>, String> {
+    let mut module = Vec::new();
+
+    if let Some(err) = stack.iter(-1, || {
+        let Some(name) = stack.to_string_str(-2) else {
+            return ControlFlow::Break("module name must be a string".to_string());
+        };
+
+        match stack.type_of(-1) {
+            lu::Type::Table => {
+                let item = match table_to_module(stack).map(Item::Table) {
+                    Ok(item) => item,
+                    Err(err) => return ControlFlow::Break(err),
+                };
+
+                module.push((name.to_owned(), item));
+            }
+
+            lu::Type::Userdata => {
+                let Some(event) = stack.to_userdata::<Event>(-1) else {
+                    return ControlFlow::Break(format!(
+                        "module item '{name}' must be a table or event"
+                    ));
+                };
+
+                module.push((name.to_owned(), Item::Event(event.borrow().clone())));
+            }
+
+            _ => {
+                return ControlFlow::Break(format!(
+                    "module item '{name}' must be a table or event"
+                ));
+            }
+        }
+
+        ControlFlow::Continue(())
+    }) {
+        return Err(err);
+    }
+
+    Ok(module)
 }
 
 #[derive(Default)]
@@ -103,9 +145,12 @@ extern "C-unwind" fn reliable_event(ctx: Context) -> lu::FnReturn {
             Some(ty) => data.push(ty),
             None => ctx.error_msg("event data must be a type"),
         }
+
+        ControlFlow::<()>::Continue(())
     });
 
     ctx.push_userdata(Event {
+        name: Uuid::new_v4(),
         from,
         data,
         reliable: true,
@@ -132,9 +177,12 @@ extern "C-unwind" fn unreliable_event(ctx: Context) -> lu::FnReturn {
             Some(ty) => data.push(ty),
             None => ctx.error_msg("event data must be a type"),
         }
+
+        ControlFlow::<()>::Continue(())
     });
 
     ctx.push_userdata(Event {
+        name: Uuid::new_v4(),
         from,
         data,
         reliable: false,
@@ -301,7 +349,8 @@ extern "C-unwind" fn struckt(ctx: Context) -> lu::FnReturn {
             ctx.error_msg("struct field value must be a type");
         }
 
-        fields.push((field.unwrap().to_string(), value.unwrap()))
+        fields.push((field.unwrap().to_string(), value.unwrap()));
+        ControlFlow::<()>::Continue(())
     });
 
     ctx.push_userdata(Type::Struct(StructType { fields }));

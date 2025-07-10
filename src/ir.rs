@@ -1,14 +1,6 @@
 use std::fmt::Display;
 
-use crate::types::{NumberKind, Type};
-
-mod build;
-
-pub use build::Check;
-
-pub fn build(ty: Type, checks: Check) -> Block {
-    build::build(ty, checks)
-}
+use crate::types::NumberKind;
 
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -27,6 +19,9 @@ impl Display for Block {
 
 #[derive(Debug, Clone)]
 pub enum Instr {
+    /// An arbitrary statement.
+    Stmt { stmt: String },
+
     /// Assert that the given expression is truthy. If it is not, an error will
     /// be thrown.
     Assert { expr: Expr, msg: String },
@@ -87,11 +82,40 @@ pub enum Instr {
         map: Expr,
         block: Block,
     },
+
+    /// Branch on a condition.
+    Branch {
+        cond: Expr,
+        then_block: Block,
+        else_block: Block,
+    },
+
+    /// Declares a local function.
+    LocalFunction {
+        into: Var,
+        args: Vec<Var>,
+        body: Block,
+    },
+
+    /// Declares an exported table.
+    ExportTable { path: String },
+
+    /// Declares an exported function.
+    ExportFunction {
+        path: String,
+        args: Vec<(Var, String)>,
+        rets: Vec<String>,
+        body: Block,
+    },
 }
 
 impl Display for Instr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Instr::Stmt { stmt } => {
+                write!(f, "{stmt};")?;
+            }
+
             Instr::Assert { expr, msg } => {
                 write!(f, "if not {expr} then error(\"{msg}\") end;")?;
             }
@@ -162,6 +186,49 @@ impl Display for Instr {
             } => {
                 write!(f, "for {index}, {value} in {map} do {block} end;")?;
             }
+
+            Instr::Branch {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                write!(f, "if {cond} then {then_block} else {else_block} end;")?;
+            }
+
+            Instr::LocalFunction { into, args, body } => {
+                let args = args
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "local function {into}({args}) {body} end;")?;
+            }
+
+            Instr::ExportTable { path } => {
+                write!(f, "result{path} = {{}};")?;
+            }
+
+            Instr::ExportFunction {
+                path,
+                args,
+                rets,
+                body,
+            } => {
+                let args = args
+                    .iter()
+                    .map(|(var, ty)| format!("{var}: {ty}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let rets = rets
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "function result{path}({args}): ({rets}) {body} end;")?;
+            }
         }
 
         Ok(())
@@ -201,7 +268,7 @@ impl From<NumberKind> for FuncK {
 }
 
 impl FuncK {
-    fn size(&self) -> u32 {
+    pub fn size(&self) -> u32 {
         match self {
             Self::U8 | Self::I8 => 1,
             Self::U16 | Self::I16 => 2,
@@ -246,7 +313,7 @@ impl Display for FuncD {
 /// An expression.
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Root,
+    Named(String),
 
     Boolean(bool),
     Number(f64),
@@ -299,51 +366,51 @@ impl From<Var> for Expr {
 }
 
 impl Expr {
-    fn index(self, index: impl Into<Expr>) -> Self {
+    pub fn index(self, index: impl Into<Expr>) -> Self {
         Expr::Index(Box::new(self), Box::new(index.into()))
     }
 
-    fn and(self, other: impl Into<Expr>) -> Self {
+    pub fn and(self, other: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::And, Box::new(other.into()))
     }
 
-    fn add(self, rhs: impl Into<Expr>) -> Self {
+    pub fn add(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Add, Box::new(rhs.into()))
     }
 
-    fn mul(self, rhs: impl Into<Expr>) -> Self {
+    pub fn mul(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Mul, Box::new(rhs.into()))
     }
 
-    fn eq(self, rhs: impl Into<Expr>) -> Self {
+    pub fn eq(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Eq, Box::new(rhs.into()))
     }
 
-    fn lt(self, rhs: impl Into<Expr>) -> Self {
+    pub fn lt(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Lt, Box::new(rhs.into()))
     }
 
-    fn gt(self, rhs: impl Into<Expr>) -> Self {
+    pub fn gt(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Gt, Box::new(rhs.into()))
     }
 
-    fn le(self, rhs: impl Into<Expr>) -> Self {
+    pub fn le(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Le, Box::new(rhs.into()))
     }
 
-    fn ge(self, rhs: impl Into<Expr>) -> Self {
+    pub fn ge(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Ge, Box::new(rhs.into()))
     }
 
-    fn len(self) -> Self {
+    pub fn len(self) -> Self {
         Expr::Unary(UnaryOp::Len, Box::new(self))
     }
 
-    fn ty(self) -> Self {
+    pub fn ty(self) -> Self {
         Expr::Type(Box::new(self))
     }
 
-    fn utf8(self) -> Self {
+    pub fn utf8(self) -> Self {
         Expr::Utf8(Box::new(self))
     }
 }
@@ -351,7 +418,7 @@ impl Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Root => write!(f, "root"),
+            Self::Named(name) => write!(f, "{name}"),
 
             Self::Boolean(b) => write!(f, "{b}"),
             Self::Number(n) => write!(f, "{n}"),
