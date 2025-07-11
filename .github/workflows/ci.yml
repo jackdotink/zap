@@ -20,6 +20,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
+    - uses: swatinem/rust-cache@v2
     - name: Build
       run: cargo build --locked --verbose
   
@@ -32,6 +33,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt, clippy
+    - uses: swatinem/rust-cache@v2
     - name: Rustfmt
       run: cargo fmt -- --check
     - name: Clippy
