@@ -204,9 +204,9 @@ dependencies = [
 
 [[package]]
 name = "lu-sys"
-version = "0.681.2"
+version = "0.681.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "221ae1a0ec2dde50094f40810add001f505d80d3dae67b1f343bc68cf5db693f"
+checksum = "c8028cc7a4018bac6335982cbdcd2115f877b1f7dd67da7e4523614a72c0f9a7"
 dependencies = [
  "cmake",
  "libc",
