@@ -78,7 +78,7 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.artifact }}
+        name: zap-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
         path: release.zip
     
     - name: Upload to Release
