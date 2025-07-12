@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+    - uses: actions/checkout@v4
+      uses: ncipollo/release-action@v1
+      with:
+        name: Release ${{ github.ref }}
+        draft: true
+        tag: ${{ github.ref }}
+
+  build:
+    needs: ["create-release"]
+    name: Build
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+        - name: "Windows x86_64"
+          os: windows-latest
+          target: x86_64-pc-windows-msvc
+          artifact: zap-${{ github.ref }}-windows-x86_64
+        
+        - name: "Linux x86_64"
+          os: ubuntu-latest
+          target: x86_64-unknown-linux-gnu
+          artifact: zap-${{ github.ref }}-linux-x86_64
+        
+        - name: "MacOS x86_64"
+          os: macos-latest
+          target: x86_64-apple-darwin
+          artifact: zap-${{ github.ref }}-macos-x86_64
+        
+        - name: "MacOS aarch64"
+          os: macos-latest
+          target: aarch64-apple-darwin
+          artifact: zap-${{ github.ref }}-macos-aarch64
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      targets: ${{ matrix.target }}
+
+    - name: Cache Rust
+      uses: swatinem/rust-cache@v2
+    
+    - name: Build
+      run: cargo build --locked --verbose --release --target ${{ matrix.target }}
+    
+    - name: Make Artifact
+      run: |
+        mkdir release
+        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          cp target/${{ matrix.target }}/release/zap.exe release/zap.exe
+        else
+          cp target/${{ matrix.target }}/release/zap release/zap
+        fi
+        zip -r release.zip release
+    
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: release.zip
+    
+    - name: Upload to Release
+      uses: shogo8213/upload-release-asset@v1
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: release.zip
+        asset_name: ${{ matrix.artifact }}
+        asset_content_type: application/octet-stream
+    
+  
