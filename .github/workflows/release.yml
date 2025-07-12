@@ -14,6 +14,7 @@ jobs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
     - uses: ncipollo/release-action@v1
+      id: create_release
       with:
         name: Release ${{ github.ref }}
         draft: true
