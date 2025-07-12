@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 mod api;
 mod builder;
 mod client;
+mod hir;
 mod ir;
 mod nums;
 mod range;
