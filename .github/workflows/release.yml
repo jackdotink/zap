@@ -63,6 +63,7 @@ jobs:
       run: cargo build --locked --verbose --release --target ${{ matrix.target }}
     
     - name: Make Artifact
+      shell: bash
       run: |
         mkdir release
         if [ "${{ matrix.os }}" == "windows-latest" ]; then
