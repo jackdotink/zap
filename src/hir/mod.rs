@@ -20,12 +20,6 @@ pub struct NumberType {
     pub range: Range,
 }
 
-impl NumberType {
-    pub fn size(&self) -> u32 {
-        self.kind.size()
-    }
-}
-
 #[derive(Clone)]
 pub struct VectorType {
     pub x: NumberType,
@@ -35,29 +29,29 @@ pub struct VectorType {
 
 #[derive(Clone)]
 pub struct BinaryStringType {
-    pub len: NumberType,
+    pub len: Length,
 }
 
 #[derive(Clone)]
 pub struct Utf8StringType {
-    pub len: NumberType,
+    pub len: Length,
 }
 
 #[derive(Clone)]
 pub struct ArrayType {
-    pub len: NumberType,
+    pub len: Length,
     pub item: Box<Type>,
 }
 
 #[derive(Clone)]
 pub struct SetType {
-    pub len: NumberType,
+    pub len: Length,
     pub item: Box<Type>,
 }
 
 #[derive(Clone)]
 pub struct MapType {
-    pub len: NumberType,
+    pub len: Length,
     pub index: Box<Type>,
     pub value: Box<Type>,
 }
@@ -65,4 +59,38 @@ pub struct MapType {
 #[derive(Clone)]
 pub struct StructType {
     pub fields: Vec<(String, Type)>,
+}
+
+#[derive(Clone)]
+pub struct Length {
+    pub min: Option<u32>,
+    pub max: Option<u32>,
+}
+
+impl Length {
+    pub fn exact(&self) -> Option<u32> {
+        if self.min == self.max { self.min } else { None }
+    }
+
+    pub fn kind(&self) -> NumberKind {
+        let max = self.max.unwrap_or(u32::MAX);
+
+        if max <= u8::MAX as u32 {
+            NumberKind::U8
+        } else if max <= u16::MAX as u32 {
+            NumberKind::U16
+        } else {
+            NumberKind::U32
+        }
+    }
+
+    pub fn number_type(&self) -> NumberType {
+        NumberType {
+            kind: self.kind(),
+            range: Range {
+                min: self.min.map(|min| min as f64),
+                max: self.max.map(|max| max as f64),
+            },
+        }
+    }
 }
