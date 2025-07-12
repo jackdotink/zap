@@ -1,4 +1,4 @@
 {
 	"luau-lsp.sourcemap.enabled": false,
-	"luau-lsp.types.definitionFiles": ["src/definitions.d.luau"]
+	"luau-lsp.types.definitionFiles": ["src/zap.d.luau"]
 }
