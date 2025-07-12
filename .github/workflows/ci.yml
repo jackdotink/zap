@@ -20,32 +20,37 @@ jobs:
         - name: "Windows x86_64"
           os: windows-latest
           target: x86_64-pc-windows-msvc
-          artifact: zap-ci-windows-x86_64
+          artifact: zap-${{ github.sha }}-windows-x86_64
         
         - name: "Linux x86_64"
           os: ubuntu-latest
           target: x86_64-unknown-linux-gnu
-          artifact: zap-ci-linux-x86_64
+          artifact: zap-${{ github.sha }}-linux-x86_64
         
         - name: "MacOS x86_64"
           os: macos-latest
           target: x86_64-apple-darwin
-          artifact: zap-ci-macos-x86_64
+          artifact: zap-${{ github.sha }}-macos-x86_64
         
         - name: "MacOS aarch64"
           os: macos-latest
           target: aarch64-apple-darwin
-          artifact: zap-ci-macos-aarch64
+          artifact: zap-${{ github.sha }}-macos-aarch64
 
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: swatinem/rust-cache@v2
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      targets: ${{ matrix.target }}
+
+    - name: Cache Rust
+      uses: swatinem/rust-cache@v2
 
     - name: Build
       run: cargo build --locked --verbose --release --target ${{ matrix.target }}
 
-    - name: Make Release
+    - name: Make Artifact
       run: |
         mkdir release
         if [ "${{ matrix.os }}" == "windows-latest" ]; then
@@ -55,7 +60,7 @@ jobs:
         fi
         zip -r release.zip release
     
-    - name: Upload Artifacts
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}
@@ -67,10 +72,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt, clippy
-    - uses: swatinem/rust-cache@v2
+    
+    - name: Cache Rust
+      uses: swatinem/rust-cache@v2
 
     - name: Rustfmt
       run: cargo fmt -- --check
