@@ -67,11 +67,10 @@ jobs:
       run: |
         mkdir release
         if [ "${{ matrix.os }}" == "windows-latest" ]; then
-          cp target/${{ matrix.target }}/release/zap.exe release/zap.exe
+          7z a release.zip target/${{ matrix.target }}/release/zap.exe
         else
-          cp target/${{ matrix.target }}/release/zap release/zap
+          zip -r release.zip target/${{ matrix.target }}/release/zap release/zap
         fi
-        zip -r release.zip release
     
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
