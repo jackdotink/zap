@@ -2,9 +2,13 @@ use std::ops::ControlFlow;
 
 use uuid::Uuid;
 
-use crate::types::{
-    ArrayType, BinaryStringType, Event, EventFrom, Item, MapType, NumberKind, NumberType, Range,
-    SetType, StructType, Type, Utf8StringType, VectorType,
+use crate::{
+    nums::NumberKind,
+    range::Range,
+    types::{
+        ArrayType, BinaryStringType, Event, EventFrom, Item, MapType, NumberType, SetType,
+        StructType, Type, Utf8StringType, VectorType,
+    },
 };
 
 pub fn exec(code: &[u8]) -> Result<Vec<(String, Item)>, String> {

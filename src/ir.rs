@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::types::NumberKind;
+use crate::nums::NumberKind;
 
 #[derive(Debug, Clone)]
 pub struct Block {

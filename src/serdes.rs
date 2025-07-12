@@ -1,7 +1,9 @@
 use crate::{
     builder::{Builder, InitVar},
     ir::{Expr, FuncD},
-    types::{NumberKind, Range, Type},
+    nums::NumberKind,
+    range::Range,
+    types::Type,
 };
 
 fn check_type(b: &mut Builder, expr: impl Into<Expr>, ty: &'static str) {
