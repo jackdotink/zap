@@ -30,25 +30,29 @@ jobs:
         - name: "Windows x86_64"
           os: windows-latest
           target: x86_64-pc-windows-msvc
-          artifact: zap-${{ github.ref }}-windows-x86_64
+          label: windows-x86_64
         
         - name: "Linux x86_64"
           os: ubuntu-latest
           target: x86_64-unknown-linux-gnu
-          artifact: zap-${{ github.ref }}-linux-x86_64
+          label: linux-x86_64
         
         - name: "MacOS x86_64"
           os: macos-latest
           target: x86_64-apple-darwin
-          artifact: zap-${{ github.ref }}-macos-x86_64
+          label: macos-x86_64
         
         - name: "MacOS aarch64"
           os: macos-latest
           target: aarch64-apple-darwin
-          artifact: zap-${{ github.ref }}-macos-aarch64
+          label: macos-aarch64
     
     steps:
     - uses: actions/checkout@v4
+
+    - name: Get Version From Tag
+      shell: bash
+      run: echo "PROJECT_VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -82,7 +86,7 @@ jobs:
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
         asset_path: release.zip
-        asset_name: ${{ matrix.artifact }}
+        asset_name: zap-${{ env.PROJECT_VERSION }}-${{ matrix.label }}.zip
         asset_content_type: application/octet-stream
     
   
