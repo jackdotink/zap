@@ -90,6 +90,7 @@ impl hir::Type {
             hir::Type::Array(ty) => ty.size(),
             hir::Type::Set(ty) => ty.size(),
             hir::Type::Map(ty) => ty.size(),
+            hir::Type::Enum(ty) => ty.size(),
             hir::Type::Struct(ty) => ty.size(),
         }
     }
@@ -137,6 +138,12 @@ impl hir::SetType {
 impl hir::MapType {
     pub fn size(&self) -> Size {
         self.index.size() + self.value.size() * self.len + self.len.kind().size()
+    }
+}
+
+impl hir::EnumType {
+    pub fn size(&self) -> Size {
+        self.number.size()
     }
 }
 

@@ -27,6 +27,7 @@ pub enum Type {
     Array(ArrayType),
     Set(SetType),
     Map(MapType),
+    Enum(EnumType),
     Struct(StructType),
 }
 
@@ -70,6 +71,12 @@ pub struct MapType {
     pub len: Length,
     pub index: Box<Type>,
     pub value: Box<Type>,
+}
+
+#[derive(Clone)]
+pub struct EnumType {
+    pub variants: Vec<String>,
+    pub number: NumberType,
 }
 
 #[derive(Clone)]

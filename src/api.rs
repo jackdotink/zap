@@ -125,6 +125,7 @@ fn library() -> lu::Library<Config> {
         .with_function_norm("array", array)
         .with_function_norm("set", set)
         .with_function_norm("map", map)
+        .with_function_norm("enum", enumn)
         .with_function_norm("struct", strukt)
 }
 
@@ -175,6 +176,7 @@ pub enum Type {
     Array(ArrayType),
     Set(SetType),
     Map(MapType),
+    Enum(EnumType),
     Struct(StructType),
 }
 
@@ -670,6 +672,28 @@ extern "C-unwind" fn map(ctx: Context) -> lu::FnReturn {
         value: Box::new(value),
     }));
 
+    ctx.ret_with(1)
+}
+
+#[derive(Clone)]
+pub struct EnumType {
+    pub variants: Vec<String>,
+}
+
+extern "C-unwind" fn enumn(ctx: Context) -> lu::FnReturn {
+    ctx.arg_table(1);
+    let mut variants = Vec::new();
+
+    ctx.iter(1, || {
+        let Some(str) = ctx.to_string_str(-1) else {
+            ctx.error_msg("enum variant must be a string");
+        };
+
+        variants.push(str.to_string());
+        ControlFlow::<()>::Continue(())
+    });
+
+    ctx.push_userdata(Type::Enum(EnumType { variants }));
     ctx.ret_with(1)
 }
 
