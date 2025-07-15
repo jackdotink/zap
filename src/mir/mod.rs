@@ -313,6 +313,7 @@ pub enum Expr {
     Vector(Box<Expr>, Box<Expr>, Box<Expr>),
     Type(Box<Expr>),
     Utf8(Box<Expr>),
+    Bit(Box<Expr>),
 }
 
 impl From<bool> for Expr {
@@ -391,6 +392,10 @@ impl Expr {
     pub fn len(self) -> Self {
         Expr::Unary(UnaryOp::Len, Box::new(self))
     }
+
+    pub fn bit(self) -> Self {
+        Expr::Bit(Box::new(self))
+    }
 }
 
 impl Display for Expr {
@@ -423,6 +428,7 @@ impl Display for Expr {
             Expr::Vector(x, y, z) => write!(f, "vector.create({x}, {y}, {z})"),
             Expr::Type(expr) => write!(f, "type({expr})"),
             Expr::Utf8(expr) => write!(f, "utf8.len({expr})"),
+            Expr::Bit(expr) => write!(f, "bit[{expr}]"),
         }
     }
 }

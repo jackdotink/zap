@@ -20,6 +20,7 @@ pub struct Event {
 
 #[derive(Clone)]
 pub enum Type {
+    Boolean(BooleanType),
     Number(NumberType),
     Vector(VectorType),
     BinaryString(BinaryStringType),
@@ -30,6 +31,9 @@ pub enum Type {
     Enum(EnumType),
     Struct(StructType),
 }
+
+#[derive(Clone)]
+pub struct BooleanType;
 
 #[derive(Clone)]
 pub struct NumberType {
