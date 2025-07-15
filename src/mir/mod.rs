@@ -369,6 +369,10 @@ impl Expr {
         Expr::Binary(Box::new(self), BinaryOp::Mul, Box::new(rhs.into()))
     }
 
+    pub fn mud(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Mod, Box::new(rhs.into()))
+    }
+
     pub fn eq(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Eq, Box::new(rhs.into()))
     }
@@ -439,6 +443,7 @@ pub enum BinaryOp {
 
     Add,
     Mul,
+    Mod,
 
     Eq,
     Lt,
@@ -453,6 +458,7 @@ impl Display for BinaryOp {
             BinaryOp::And => write!(f, "and"),
             BinaryOp::Add => write!(f, "+"),
             BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Mod => write!(f, "%"),
             BinaryOp::Eq => write!(f, "=="),
             BinaryOp::Lt => write!(f, "<"),
             BinaryOp::Gt => write!(f, ">"),
