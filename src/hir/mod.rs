@@ -7,8 +7,8 @@ mod size;
 
 #[derive(Clone)]
 pub enum Item {
-    Event(Event),
     Table(Vec<(String, Item)>),
+    Event(Event),
 }
 
 #[derive(Clone)]

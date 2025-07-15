@@ -37,6 +37,8 @@ fn main() {
                     return;
                 }
             };
+
+            let items = hir::Item::from(items);
         }
 
         Command::New => {

@@ -1,3 +1,10 @@
+#[derive(Clone, Copy)]
+pub enum ApiCheck {
+    None,
+    Some,
+    Full,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum NumberKind {
     U8,

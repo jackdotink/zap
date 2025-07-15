@@ -3,6 +3,7 @@ use std::fmt::Display;
 use crate::shared::NumberKind;
 
 mod builder;
+mod client;
 mod serdes;
 
 #[derive(Clone)]
@@ -84,8 +85,8 @@ pub enum Instr {
         else_block: Block,
     },
 
-    /// Declare a local function and initialize the variable with it.
-    LocalFunction {
+    /// Declare a function and initialize the variable with it.
+    Function {
         into: Var,
         args: Vec<Var>,
         body: Block,
@@ -161,7 +162,7 @@ impl Display for Instr {
                 else_block,
             } => write!(f, "if {cond} then {then_block} else {else_block} end;")?,
 
-            Instr::LocalFunction { into, args, body } => {
+            Instr::Function { into, args, body } => {
                 let args = args
                     .iter()
                     .map(|arg| arg.to_string())

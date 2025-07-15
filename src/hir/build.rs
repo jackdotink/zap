@@ -10,13 +10,14 @@ use crate::{
 impl From<api::Item> for Item {
     fn from(value: api::Item) -> Self {
         match value {
-            api::Item::Event(event) => Item::Event(event.into()),
             api::Item::Table(table) => Item::Table(
                 table
                     .into_iter()
                     .map(|(name, item)| (name, Item::from(item)))
                     .collect(),
             ),
+
+            api::Item::Event(event) => Item::Event(event.into()),
         }
     }
 }

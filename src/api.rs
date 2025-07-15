@@ -19,7 +19,7 @@ impl lu::Config for Config {
 
 type Context = lu::Context<Config>;
 
-pub fn exec(source: &[u8]) -> Result<Vec<(String, Item)>, String> {
+pub fn exec(source: &[u8]) -> Result<Item, String> {
     let compiler = lu::Compiler::default();
     let bytecode = compiler.compile(source);
 
@@ -54,14 +54,14 @@ pub fn exec(source: &[u8]) -> Result<Vec<(String, Item)>, String> {
             Err(format!("yielded: {trace}"))
         },
 
-        _ => convert(stack),
+        _ => convert(stack).map(Item::Table),
     }
 }
 
 #[derive(Clone)]
 pub enum Item {
-    Event(Event),
     Table(Vec<(String, Item)>),
+    Event(Event),
 }
 
 fn convert(stack: &lu::Stack<Config>) -> Result<Vec<(String, Item)>, String> {

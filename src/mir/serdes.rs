@@ -4,7 +4,7 @@ use crate::{
         Expr, FuncD,
         builder::{Builder, InitVar},
     },
-    shared::{NumberKind, Range},
+    shared::{ApiCheck, NumberKind, Range},
 };
 
 fn check_type(b: &mut Builder, expr: impl Into<Expr>, ty: &'static str) {
@@ -41,18 +41,13 @@ fn check_utf8(b: &mut Builder, expr: impl Into<Expr>) {
     b.assert(Expr::Utf8(Box::new(expr.into())), "not a valid utf8 string");
 }
 
-#[derive(Clone, Copy)]
-pub enum ApiCheck {
-    None,
-    Some,
-    Full,
-}
-
+#[derive(Clone)]
 pub struct Ser {
     pub apicheck: ApiCheck,
     pub native: bool,
 }
 
+#[derive(Clone)]
 pub struct Des {
     pub apicheck: ApiCheck,
     pub check: bool,

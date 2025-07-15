@@ -271,7 +271,7 @@ impl Builder {
         });
     }
 
-    pub fn local_function<const ARGS: usize>(
+    pub fn function<const ARGS: usize>(
         &mut self,
         block: impl FnOnce(&mut Self, &[InitVar; ARGS]),
     ) -> InitVar {
@@ -280,7 +280,22 @@ impl Builder {
         let body = self.block(|b| block(b, &vars));
         let args = vars.iter().map(Var::from).collect();
 
-        self.out.push(Instr::LocalFunction {
+        self.out.push(Instr::Function {
+            into: Var::from(&into),
+            args,
+            body,
+        });
+
+        into
+    }
+
+    pub fn function_n(&mut self, n: usize, block: impl FnOnce(&mut Self, &[InitVar])) -> InitVar {
+        let into = self.var().init();
+        let vars = Vec::from_iter((0..n).map(|_| self.var().init()));
+        let body = self.block(|b| block(b, &vars));
+        let args = vars.iter().map(Var::from).collect();
+
+        self.out.push(Instr::Function {
             into: Var::from(&into),
             args,
             body,
