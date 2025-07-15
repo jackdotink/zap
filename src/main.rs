@@ -3,16 +3,9 @@ use std::default::Default;
 use clap::{Parser, Subcommand};
 
 mod api;
-mod builder;
-mod client;
 mod hir;
-mod ir;
-mod nums;
-mod range;
-mod serdes;
-mod server;
-mod types;
-mod var;
+mod mir;
+mod shared;
 
 #[derive(Parser)]
 struct Cli {
@@ -44,17 +37,6 @@ fn main() {
                     return;
                 }
             };
-
-            let server = server::server(server::Server::default(), &items)
-                .expect("failed to generate server code");
-            let client = client::client(client::Client::default(), &items)
-                .expect("failed to generate client code");
-
-            std::fs::create_dir_all("./zap/out").expect("failed to create zap/out directory");
-            std::fs::write("./zap/out/server.luau", server).expect("failed to write server.luau");
-            std::fs::write("./zap/out/client.luau", client).expect("failed to write client.luau");
-
-            println!("Generated server and client code in `zap/out/` directory.");
         }
 
         Command::New => {

@@ -1,6 +1,22 @@
-use crate::{nums::NumberKind, range::Range};
+use uuid::Uuid;
 
+use crate::shared::{NetworkSide, NumberKind, Range};
+
+mod build;
 mod size;
+
+#[derive(Clone)]
+pub enum Item {
+    Event(Event),
+    Table(Vec<(String, Item)>),
+}
+
+#[derive(Clone)]
+pub struct Event {
+    pub uuid: Uuid,
+    pub from: NetworkSide,
+    pub data: Vec<Type>,
+}
 
 #[derive(Clone)]
 pub enum Type {
@@ -61,7 +77,7 @@ pub struct StructType {
     pub fields: Vec<(String, Type)>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Length {
     pub min: Option<u32>,
     pub max: Option<u32>,
@@ -91,6 +107,15 @@ impl Length {
                 min: self.min.map(|min| min as f64),
                 max: self.max.map(|max| max as f64),
             },
+        }
+    }
+}
+
+impl From<Length> for Range {
+    fn from(value: Length) -> Self {
+        Range {
+            min: value.min.map(|min| min as f64),
+            max: value.max.map(|max| max as f64),
         }
     }
 }

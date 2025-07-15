@@ -1,85 +1,79 @@
 use std::fmt::Display;
 
-use crate::nums::NumberKind;
+use crate::shared::NumberKind;
 
-#[derive(Debug, Clone)]
+mod builder;
+mod serdes;
+
+#[derive(Clone)]
 pub struct Block {
     pub instrs: Vec<Instr>,
 }
 
 impl Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for instr in &self.instrs {
-            write!(f, "{instr}")?;
+        for instr in self.instrs.iter() {
+            writeln!(f, "{instr}")?;
         }
 
         Ok(())
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Instr {
-    /// An arbitrary statement.
+    /// An arbitrary Luau statement.
     Stmt { stmt: String },
 
-    /// Assert that the given expression is truthy. If it is not, an error will
-    /// be thrown.
+    /// Assert that the given expression is truthy.
     Assert { expr: Expr, msg: String },
 
-    /// Allocate a fixed-size number of bytes. This should be used instead of
-    /// `AllocD` when the size is known at compile time as it allows for the
-    /// compiler to further optimize when the allocation takes place.
+    /// Allocate a fixed-size number of bytes.
     AllocK { size: u32 },
 
-    /// Allocate a dynamic number of bytes. This should be used when the size is
-    /// dependent on runtime values, such as the length of an array.
+    /// Allocate a dynamic number of bytes.
     AllocD { size: Expr },
 
-    /// Reserve a fixed-size number of bytes. Normally `WriteK` or `WriteD` will
-    /// reserve and write to some memory, but this instruction can be used to
-    /// reserve space without writing to it. This is useful for maps, where the
-    /// length cannot be determined until the map is fully iterated, but the
-    /// length must be written ahead of the values so that it can be decoded.
+    /// Reserve a fixed-size number of bytes.
     ReserveK { into: Var, size: u32 },
 
-    /// Write a value whose size is known at compile time.
+    /// Write a value of a fixed size.
     WriteK { func: FuncK, expr: Expr },
 
-    /// Write a value whose size is not known at compile time.
+    /// Write a value of a dynamic size.
     WriteD { func: FuncD, expr: Expr, size: Expr },
 
-    /// Write a value whose size is known at compile time to a reserved
-    /// location.
+    /// Write a value of a fixed size to a reserved location.
     WriteReservedK { func: FuncK, at: Expr, expr: Expr },
 
-    /// Read a value whose size is known at compile time.
+    /// Initialize a variable by reading a value of a fixed size.
     ReadK { into: Var, func: FuncK },
 
-    /// Read a value whose size is not known at compile time.
+    /// Initialize a variable by reading a value of a dynamic size.
     ReadD { into: Var, func: FuncD, size: Expr },
 
     /// Initialize a variable with an expression.
     Expr { into: Var, expr: Expr },
 
-    /// Assign to a variable.
+    /// Assign a value to a variable.
     Assign { into: Var, expr: Expr },
 
-    /// Assign to the index of a variable.
+    /// Assign a value to the index of a variable.
     AssignIndex { into: Var, index: Expr, expr: Expr },
 
-    /// Iterate over a range.
-    IterRange {
+    /// Iterate over an integer range.
+    ForRange {
         into: Var,
         start: Expr,
         end: Expr,
         block: Block,
     },
 
-    /// Iterate over a map.
-    IterMap {
+    /// Iterate over the indices and values of a table.
+    ForTable {
         index: Var,
         value: Var,
-        map: Expr,
+        table: Expr,
         block: Block,
     },
 
@@ -90,21 +84,10 @@ pub enum Instr {
         else_block: Block,
     },
 
-    /// Declares a local function.
+    /// Declare a local function and initialize the variable with it.
     LocalFunction {
         into: Var,
         args: Vec<Var>,
-        body: Block,
-    },
-
-    /// Declares an exported table.
-    ExportTable { path: String },
-
-    /// Declares an exported function.
-    ExportFunction {
-        path: String,
-        args: Vec<(Var, String)>,
-        rets: Vec<String>,
         body: Block,
     },
 }
@@ -112,21 +95,13 @@ pub enum Instr {
 impl Display for Instr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Instr::Stmt { stmt } => {
-                write!(f, "{stmt};")?;
-            }
+            Instr::Stmt { stmt } => write!(f, "{stmt};")?,
 
-            Instr::Assert { expr, msg } => {
-                write!(f, "if not {expr} then error(\"{msg}\") end;")?;
-            }
+            Instr::Assert { expr, msg } => write!(f, "if not {expr} then error(\"{msg}\") end;")?,
 
-            Instr::AllocK { size } => {
-                write!(f, "if pos + {size} > len then resize({size}) end;")?;
-            }
+            Instr::AllocK { size } => write!(f, "if pos + {size} > len then resize({size}) end;")?,
 
-            Instr::AllocD { size } => {
-                write!(f, "if pos + {size} > len then resize({size}) end;")?;
-            }
+            Instr::AllocD { size } => write!(f, "if pos + {size} > len then resize({size}) end;")?,
 
             Instr::ReserveK { into, size } => {
                 write!(f, "local {into} = pos;")?;
@@ -134,17 +109,19 @@ impl Display for Instr {
             }
 
             Instr::WriteK { func, expr } => {
-                write!(f, "buffer.write{func}(buf, pos, {expr});")?;
+                write!(f, "buffer.write{func}(buf, pos {expr});")?;
                 write!(f, "pos += {};", func.size())?;
             }
 
             Instr::WriteD { func, expr, size } => {
-                write!(f, "buffer.write{func}(buf, pos, {expr}, {size});")?;
-                write!(f, "pos += {size};")?;
+                write!(f, "local size = {size};")?;
+                write!(f, "buffer.write{func}(buf, pos, {expr}, size);")?;
+                write!(f, "pos += size;")?;
             }
 
             Instr::WriteReservedK { func, at, expr } => {
                 write!(f, "buffer.write{func}(buf, {at}, {expr});")?;
+                write!(f, "pos += {};", func.size())?;
             }
 
             Instr::ReadK { into, func } => {
@@ -153,81 +130,45 @@ impl Display for Instr {
             }
 
             Instr::ReadD { into, func, size } => {
-                write!(f, "local {into} = buffer.read{func}(buf, pos, {size});")?;
-                write!(f, "pos += {size};")?;
+                write!(f, "local size = {size};")?;
+                write!(f, "local {into} = buffer.read{func}(buf, pos, size);")?;
+                write!(f, "pos += size;")?;
             }
 
-            Instr::Expr { into, expr } => {
-                write!(f, "local {into} = {expr};")?;
-            }
+            Instr::Expr { into, expr } => write!(f, "local {into} = {expr};")?,
 
-            Instr::Assign { into, expr } => {
-                write!(f, "{into} = {expr};")?;
-            }
+            Instr::Assign { into: var, expr } => write!(f, "{var} = {expr};")?,
 
-            Instr::AssignIndex { into, index, expr } => {
-                write!(f, "{into}[{index}] = {expr};")?;
-            }
+            Instr::AssignIndex { into, index, expr } => write!(f, "{into}[{index}] = {expr};")?,
 
-            Instr::IterRange {
+            Instr::ForRange {
                 into,
                 start,
                 end,
                 block,
-            } => {
-                write!(f, "for {into} = {start}, {end} do {block} end;")?;
-            }
+            } => write!(f, "for {into} = {start}, {end} do {block} end;")?,
 
-            Instr::IterMap {
+            Instr::ForTable {
                 index,
                 value,
-                map,
+                table,
                 block,
-            } => {
-                write!(f, "for {index}, {value} in {map} do {block} end;")?;
-            }
+            } => write!(f, "for {index}, {value} in {table} do {block} end;")?,
 
             Instr::Branch {
                 cond,
                 then_block,
                 else_block,
-            } => {
-                write!(f, "if {cond} then {then_block} else {else_block} end;")?;
-            }
+            } => write!(f, "if {cond} then {then_block} else {else_block} end;")?,
 
             Instr::LocalFunction { into, args, body } => {
                 let args = args
                     .iter()
-                    .map(ToString::to_string)
+                    .map(|arg| arg.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 
                 write!(f, "local function {into}({args}) {body} end;")?;
-            }
-
-            Instr::ExportTable { path } => {
-                write!(f, "result{path} = {{}};")?;
-            }
-
-            Instr::ExportFunction {
-                path,
-                args,
-                rets,
-                body,
-            } => {
-                let args = args
-                    .iter()
-                    .map(|(var, ty)| format!("{var}: {ty}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                let rets = rets
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                write!(f, "function result{path}({args}): ({rets}) {body} end;")?;
             }
         }
 
@@ -235,7 +176,6 @@ impl Display for Instr {
     }
 }
 
-/// A writable type with a known size at compile time.
 #[derive(Debug, Clone, Copy)]
 pub enum FuncK {
     U8,
@@ -296,7 +236,6 @@ impl Display for FuncK {
     }
 }
 
-/// A writable type whose size is not known at compile time.
 #[derive(Debug, Clone, Copy)]
 pub enum FuncD {
     String,
@@ -310,18 +249,14 @@ impl Display for FuncD {
     }
 }
 
-/// An expression.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Expr {
-    Named(String),
-
     Boolean(bool),
     Number(f64),
     String(String),
 
-    Table,
+    Table(Vec<(Expr, Expr)>),
     Array(Box<Expr>),
-    Struct(Vec<(String, Expr)>),
 
     Var(Var),
 
@@ -344,6 +279,12 @@ impl From<bool> for Expr {
 impl From<f64> for Expr {
     fn from(value: f64) -> Self {
         Expr::Number(value)
+    }
+}
+
+impl From<u32> for Expr {
+    fn from(value: u32) -> Self {
+        Expr::Number(value as f64)
     }
 }
 
@@ -370,8 +311,8 @@ impl Expr {
         Expr::Index(Box::new(self), Box::new(index.into()))
     }
 
-    pub fn and(self, other: impl Into<Expr>) -> Self {
-        Expr::Binary(Box::new(self), BinaryOp::And, Box::new(other.into()))
+    pub fn and(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::And, Box::new(rhs.into()))
     }
 
     pub fn add(self, rhs: impl Into<Expr>) -> Self {
@@ -405,57 +346,49 @@ impl Expr {
     pub fn len(self) -> Self {
         Expr::Unary(UnaryOp::Len, Box::new(self))
     }
-
-    pub fn ty(self) -> Self {
-        Expr::Type(Box::new(self))
-    }
-
-    pub fn utf8(self) -> Self {
-        Expr::Utf8(Box::new(self))
-    }
 }
 
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Named(name) => write!(f, "{name}"),
+            Expr::Boolean(b) => write!(f, "{b}"),
+            Expr::Number(n) => write!(f, "{n}"),
+            Expr::String(s) => write!(f, "\"{}\"", s.escape_default()),
 
-            Self::Boolean(b) => write!(f, "{b}"),
-            Self::Number(n) => write!(f, "{n}"),
-            Self::String(s) => write!(f, "\"{}\"", s.escape_default()),
+            Expr::Table(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|(i, v)| format!("{i} = {v}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-            Self::Table => write!(f, "{{}}"),
-            Self::Array(expr) if matches!(**expr, Expr::Number(0.0)) => write!(f, "{{}}"),
-            Self::Array(expr) => write!(f, "table.create({expr})"),
-            Self::Struct(fields) => {
-                write!(f, "{{ ")?;
-
-                for (name, expr) in fields {
-                    write!(f, "{name} = {expr}, ")?;
-                }
-
-                write!(f, "}}")
+                write!(f, "{{ {fields} }}")
             }
 
-            Self::Var(v) => write!(f, "{v}"),
+            Expr::Array(expr) if matches!(**expr, Expr::Number(0.0)) => write!(f, "{{}}"),
+            Expr::Array(expr) => write!(f, "table.create({expr})"),
 
-            Self::Index(expr, index) => write!(f, "{expr}[{index}]"),
+            Expr::Var(v) => write!(f, "{v}"),
 
-            Self::Binary(lhs, op, rhs) => write!(f, "({lhs} {op} {rhs})"),
-            Self::Unary(op, expr) => write!(f, "({op}{expr})"),
+            Expr::Index(expr, index) => write!(f, "{expr}[{index}]"),
 
-            Self::Vector(x, y, z) => write!(f, "vector.create({x}, {y}, {z})"),
-            Self::Type(expr) => write!(f, "type({expr})"),
-            Self::Utf8(expr) => write!(f, "utf8.len({expr})"),
+            Expr::Binary(lhs, op, rhs) => write!(f, "({lhs} {op} {rhs})"),
+            Expr::Unary(op, expr) => write!(f, "{op}{expr}"),
+
+            Expr::Vector(x, y, z) => write!(f, "vector.create({x}, {y}, {z})"),
+            Expr::Type(expr) => write!(f, "type({expr})"),
+            Expr::Utf8(expr) => write!(f, "utf8.len({expr})"),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum BinaryOp {
     And,
+
     Add,
     Mul,
+
     Eq,
     Lt,
     Gt,
@@ -466,19 +399,19 @@ pub enum BinaryOp {
 impl Display for BinaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::And => write!(f, "and"),
-            Self::Add => write!(f, "+"),
-            Self::Mul => write!(f, "*"),
-            Self::Eq => write!(f, "=="),
-            Self::Lt => write!(f, "<"),
-            Self::Gt => write!(f, ">"),
-            Self::Le => write!(f, "<="),
-            Self::Ge => write!(f, ">="),
+            BinaryOp::And => write!(f, "and"),
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Eq => write!(f, "=="),
+            BinaryOp::Lt => write!(f, "<"),
+            BinaryOp::Gt => write!(f, ">"),
+            BinaryOp::Le => write!(f, "<="),
+            BinaryOp::Ge => write!(f, ">="),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum UnaryOp {
     Len,
 }
@@ -486,12 +419,12 @@ pub enum UnaryOp {
 impl Display for UnaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Len => write!(f, "#"),
+            UnaryOp::Len => write!(f, "#"),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Copy)]
 pub struct Var(pub u16);
 
 impl Display for Var {
