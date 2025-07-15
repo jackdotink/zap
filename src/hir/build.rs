@@ -1,0 +1,132 @@
+use crate::{
+    api,
+    hir::{
+        ArrayType, BinaryStringType, Event, Item, Length, MapType, NumberType, SetType, StructType,
+        Type, Utf8StringType, VectorType,
+    },
+    shared::Range,
+};
+
+impl From<api::Item> for Item {
+    fn from(value: api::Item) -> Self {
+        match value {
+            api::Item::Table(table) => Item::Table(
+                table
+                    .into_iter()
+                    .map(|(name, item)| (name, Item::from(item)))
+                    .collect(),
+            ),
+
+            api::Item::Event(event) => Item::Event(event.into()),
+        }
+    }
+}
+
+impl From<api::Event> for Event {
+    fn from(value: api::Event) -> Self {
+        let uuid = value.uuid;
+        let from = value.from;
+        let data = value.data.into_iter().map(Type::from).collect();
+
+        Event { uuid, from, data }
+    }
+}
+
+impl From<api::Type> for Type {
+    fn from(value: api::Type) -> Self {
+        match value {
+            api::Type::Number(ty) => Type::Number(ty.into()),
+            api::Type::Vector(ty) => Type::Vector(ty.into()),
+            api::Type::BinaryString(ty) => Type::BinaryString(ty.into()),
+            api::Type::Utf8String(ty) => Type::Utf8String(ty.into()),
+            api::Type::Array(ty) => Type::Array(ty.into()),
+            api::Type::Set(ty) => Type::Set(ty.into()),
+            api::Type::Map(ty) => Type::Map(ty.into()),
+            api::Type::Struct(ty) => Type::Struct(ty.into()),
+        }
+    }
+}
+
+impl From<api::NumberType> for NumberType {
+    fn from(value: api::NumberType) -> Self {
+        let kind = value.kind;
+        let range = value.range;
+
+        NumberType { kind, range }
+    }
+}
+
+impl From<api::VectorType> for VectorType {
+    fn from(value: api::VectorType) -> Self {
+        let x = NumberType::from(value.x);
+        let y = NumberType::from(value.y);
+        let z = value.z.map(NumberType::from);
+
+        VectorType { x, y, z }
+    }
+}
+
+impl From<api::BinaryStringType> for BinaryStringType {
+    fn from(value: api::BinaryStringType) -> Self {
+        let len = Length::from(value.len);
+
+        BinaryStringType { len }
+    }
+}
+
+impl From<api::Utf8StringType> for Utf8StringType {
+    fn from(value: api::Utf8StringType) -> Self {
+        let len = Length::from(value.len);
+
+        Utf8StringType { len }
+    }
+}
+
+impl From<api::ArrayType> for ArrayType {
+    fn from(value: api::ArrayType) -> Self {
+        let len = Length::from(value.len);
+        let item = Box::new(Type::from(*value.item));
+
+        ArrayType { len, item }
+    }
+}
+
+impl From<api::SetType> for SetType {
+    fn from(value: api::SetType) -> Self {
+        let len = Length::from(value.len);
+        let item = Box::new(Type::from(*value.item));
+
+        SetType { len, item }
+    }
+}
+
+impl From<api::MapType> for MapType {
+    fn from(value: api::MapType) -> Self {
+        let len = Length::from(value.len);
+        let index = Box::new(Type::from(*value.index));
+        let value = Box::new(Type::from(*value.value));
+
+        MapType { len, index, value }
+    }
+}
+
+impl From<api::StructType> for StructType {
+    fn from(value: api::StructType) -> Self {
+        let fields = value
+            .fields
+            .into_iter()
+            .map(|(name, ty)| (name, Type::from(ty)))
+            .collect();
+
+        StructType { fields }
+    }
+}
+
+impl From<Range> for Length {
+    fn from(value: Range) -> Self {
+        let min = value.min.map(|n| n as u32);
+        let max = value.max.map(|n| n as u32);
+
+        Length { min, max }
+    }
+}

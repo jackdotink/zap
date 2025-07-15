@@ -2,14 +2,26 @@ use std::ops::ControlFlow;
 
 use uuid::Uuid;
 
-use crate::types::{
-    ArrayType, BinaryStringType, Event, EventFrom, Item, MapType, NumberKind, NumberType, Range,
-    SetType, StructType, Type, Utf8StringType, VectorType,
+use crate::{
+    shared::NetworkSide,
+    shared::{NumberKind, Range},
 };
 
-pub fn exec(code: &[u8]) -> Result<Vec<(String, Item)>, String> {
+#[derive(Default)]
+struct Config;
+
+impl lu::Config for Config {
+    type Allocator = lu::DefaultAllocator;
+
+    type MainData = ();
+    type ThreadData = ();
+}
+
+type Context = lu::Context<Config>;
+
+pub fn exec(source: &[u8]) -> Result<Item, String> {
     let compiler = lu::Compiler::default();
-    let bytecode = compiler.compile(code);
+    let bytecode = compiler.compile(source);
 
     let mut state = lu::State::new((), lu::DefaultAllocator);
     state.open_std();
@@ -42,69 +54,62 @@ pub fn exec(code: &[u8]) -> Result<Vec<(String, Item)>, String> {
             Err(format!("yielded: {trace}"))
         },
 
-        _ => table_to_module(stack),
+        _ => convert(stack).map(Item::Table),
     }
 }
 
-fn table_to_module(stack: &lu::Stack<Config>) -> Result<Vec<(String, Item)>, String> {
-    let mut module = Vec::new();
+#[derive(Clone)]
+pub enum Item {
+    Table(Vec<(String, Item)>),
+    Event(Event),
+}
+
+fn convert(stack: &lu::Stack<Config>) -> Result<Vec<(String, Item)>, String> {
+    let mut items = Vec::new();
 
     if let Some(err) = stack.iter(-1, || {
         let Some(name) = stack.to_string_str(-2) else {
-            return ControlFlow::Break("module name must be a string".to_string());
+            return ControlFlow::Break("item name must be a string".to_string());
         };
 
         match stack.type_of(-1) {
             lu::Type::Table => {
-                let item = match table_to_module(stack).map(Item::Table) {
+                let item = match convert(stack).map(Item::Table) {
                     Ok(item) => item,
                     Err(err) => return ControlFlow::Break(err),
                 };
 
-                module.push((name.to_owned(), item));
+                items.push((name.to_owned(), item));
             }
 
             lu::Type::Userdata => {
                 let Some(event) = stack.to_userdata::<Event>(-1) else {
-                    return ControlFlow::Break(format!(
-                        "module item '{name}' must be a table or event"
-                    ));
+                    return ControlFlow::Break(format!("item {name} must be a table or event"));
                 };
 
-                module.push((name.to_owned(), Item::Event(event.borrow().clone())));
+                items.push((name.to_owned(), Item::Event(event.borrow().clone())));
             }
 
             _ => {
-                return ControlFlow::Break(format!(
-                    "module item '{name}' must be a table or event"
-                ));
+                return ControlFlow::Break(format!("item {name} must be a table or event"));
             }
         }
 
         ControlFlow::Continue(())
     }) {
-        return Err(err);
+        Err(err)
+    } else {
+        Ok(items)
     }
-
-    Ok(module)
-}
-
-#[derive(Default)]
-struct Config;
-
-impl lu::Config for Config {
-    type Allocator = lu::DefaultAllocator;
-
-    type MainData = ();
-    type ThreadData = ();
 }
 
 fn library() -> lu::Library<Config> {
     let string = lu::Library::default()
-        .with_function_norm("binary", string_binary)
-        .with_function_norm("utf8", string_utf8);
+        .with_function_norm("binary", binary_string)
+        .with_function_norm("utf8", utf8_string);
 
     lu::Library::default()
+        .with_function_norm("event", event)
         .with_function_norm("u8", u8)
         .with_function_norm("u16", u16)
         .with_function_norm("u32", u32)
@@ -120,123 +125,333 @@ fn library() -> lu::Library<Config> {
         .with_function_norm("array", array)
         .with_function_norm("set", set)
         .with_function_norm("map", map)
-        .with_function_norm("struct", struckt)
-        .with_function_norm("reliable", reliable_event)
-        .with_function_norm("unreliable", unreliable_event)
+        .with_function_norm("struct", strukt)
 }
 
-type Context = lu::Context<Config>;
+#[derive(lu::Userdata, Clone)]
+pub struct Event {
+    pub uuid: Uuid,
+    pub from: NetworkSide,
+    pub data: Vec<Type>,
+}
 
-extern "C-unwind" fn reliable_event(ctx: Context) -> lu::FnReturn {
-    let from = match ctx.arg_string_str(1) {
-        "server" => EventFrom::Server,
-        "client" => EventFrom::Client,
+extern "C-unwind" fn event(ctx: Context) -> lu::FnReturn {
+    let from = ctx.arg_string_str(1);
+    ctx.arg_table(2);
 
-        _ => ctx.arg_error(1, c"expected 'server' or 'client'"),
+    let uuid = Uuid::new_v4();
+    let from = match from {
+        "server" => NetworkSide::Server,
+        "client" => NetworkSide::Client,
+
+        _ => ctx.arg_error(1, c"must be 'server' or 'client'"),
     };
 
-    ctx.arg_table(2);
     let mut data = Vec::new();
-
     ctx.iter(2, || {
-        let ty = ctx.to_userdata::<Type>(-1).map(|u| u.borrow().clone());
+        if !ctx.is_number(-2) {
+            ctx.error_msg("event data must be an array")
+        }
 
-        match ty {
-            Some(ty) => data.push(ty),
-            None => ctx.error_msg("event data must be a type"),
+        if let Some(item) = ctx.to_userdata::<Type>(-1) {
+            data.push(item.borrow().clone());
+        } else {
+            ctx.error_msg("event data must be a type");
         }
 
         ControlFlow::<()>::Continue(())
     });
 
-    ctx.push_userdata(Event {
-        name: Uuid::new_v4(),
-        from,
-        data,
-        reliable: true,
-    });
+    ctx.push_userdata(Event { uuid, from, data });
+    ctx.ret_with(1)
+}
+
+#[derive(lu::Userdata, Clone)]
+pub enum Type {
+    Number(NumberType),
+    Vector(VectorType),
+    BinaryString(BinaryStringType),
+    Utf8String(Utf8StringType),
+    Array(ArrayType),
+    Set(SetType),
+    Map(MapType),
+    Struct(StructType),
+}
+
+#[derive(Clone)]
+pub struct NumberType {
+    pub kind: NumberKind,
+    pub range: Range,
+}
+
+extern "C-unwind" fn u8(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && !(0f64..=255f64).contains(&min)
+    {
+        ctx.error_msg("u8 min must be between 0 and 255")
+    }
+
+    if let Some(max) = max
+        && !(0f64..=255f64).contains(&max)
+    {
+        ctx.error_msg("u8 max must be between 0 and 255")
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::U8,
+        range: Range { min, max },
+    }));
 
     ctx.ret_with(1)
 }
 
-extern "C-unwind" fn unreliable_event(ctx: Context) -> lu::FnReturn {
-    let from = match ctx.arg_string_str(1) {
-        "server" => EventFrom::Server,
-        "client" => EventFrom::Client,
+extern "C-unwind" fn u16(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
 
-        _ => ctx.arg_error(1, c"expected 'server' or 'client'"),
-    };
+    if let Some(min) = min
+        && !(0f64..=65535f64).contains(&min)
+    {
+        ctx.error_msg("u16 min must be between 0 and 65535")
+    }
 
-    ctx.arg_table(2);
-    let mut data = Vec::new();
+    if let Some(max) = max
+        && !(0f64..=65535f64).contains(&max)
+    {
+        ctx.error_msg("u16 max must be between 0 and 65535")
+    }
 
-    ctx.iter(2, || {
-        let ty = ctx.to_userdata::<Type>(-1).map(|u| u.borrow().clone());
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
 
-        match ty {
-            Some(ty) => data.push(ty),
-            None => ctx.error_msg("event data must be a type"),
-        }
-
-        ControlFlow::<()>::Continue(())
-    });
-
-    ctx.push_userdata(Event {
-        name: Uuid::new_v4(),
-        from,
-        data,
-        reliable: false,
-    });
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::U16,
+        range: Range { min, max },
+    }));
 
     ctx.ret_with(1)
 }
 
-macro_rules! number {
-    ($ty:ty, $kind:ident, $name:ident) => {
-        extern "C-unwind" fn $name(ctx: Context) -> lu::FnReturn {
-            let min = ctx.arg_number_opt(1);
-            let max = ctx.arg_number_opt(2);
+extern "C-unwind" fn u32(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
 
-            if let Some(min) = min {
-                if !((<$ty>::MIN as f64) < min || min < (<$ty>::MAX as f64)) {
-                    ctx.error_msg("range minimum out of bounds");
-                }
-            }
+    if let Some(min) = min
+        && !(0f64..=4294967295f64).contains(&min)
+    {
+        ctx.error_msg("u32 min must be between 0 and 4294967295")
+    }
 
-            if let Some(max) = max {
-                if !((<$ty>::MIN as f64) < max || max < (<$ty>::MAX as f64)) {
-                    ctx.error_msg("range maximum out of bounds");
-                }
-            }
+    if let Some(max) = max
+        && !(0f64..=4294967295f64).contains(&max)
+    {
+        ctx.error_msg("u32 max must be between 0 and 4294967295")
+    }
 
-            if let (Some(min), Some(max)) = (min, max) {
-                if min > max {
-                    ctx.error_msg("range minimum cannot be greater than maximum");
-                }
-            }
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
 
-            ctx.push_userdata(Type::Number(NumberType {
-                kind: NumberKind::$kind,
-                range: Range { min, max },
-            }));
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::U32,
+        range: Range { min, max },
+    }));
 
-            ctx.ret_with(1)
-        }
-    };
+    ctx.ret_with(1)
 }
 
-number!(u8, U8, u8);
-number!(u16, U16, u16);
-number!(u32, U32, u32);
+extern "C-unwind" fn i8(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
 
-number!(i8, I8, i8);
-number!(i16, I16, i16);
-number!(i32, I32, i32);
+    if let Some(min) = min
+        && !(-128f64..=127f64).contains(&min)
+    {
+        ctx.error_msg("i8 min must be between -128 and 127")
+    }
 
-number!(f32, F32, f32);
-number!(f64, F64, f64);
-number!(f32, NaNF32, nanf32);
-number!(f64, NaNF64, nanf64);
+    if let Some(max) = max
+        && !(-128f64..=127f64).contains(&max)
+    {
+        ctx.error_msg("i8 max must be between -128 and 127")
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::I8,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
+extern "C-unwind" fn i16(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && !(-32768f64..=32767f64).contains(&min)
+    {
+        ctx.error_msg("i16 min must be between -32768 and 32767")
+    }
+
+    if let Some(max) = max
+        && !(-32768f64..=32767f64).contains(&max)
+    {
+        ctx.error_msg("i16 max must be between -32768 and 32767")
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::I16,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
+extern "C-unwind" fn i32(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && !(-2147483648f64..=2147483647f64).contains(&min)
+    {
+        ctx.error_msg("i32 min must be between -2147483648 and 2147483647")
+    }
+
+    if let Some(max) = max
+        && !(-2147483648f64..=2147483647f64).contains(&max)
+    {
+        ctx.error_msg("i32 max must be between -2147483648 and 2147483647")
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::I32,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
+extern "C-unwind" fn f32(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::F32,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
+extern "C-unwind" fn f64(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::F64,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
+extern "C-unwind" fn nanf32(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::NaNF32,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
+extern "C-unwind" fn nanf64(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::NaNF64,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
+#[derive(Clone)]
+pub struct VectorType {
+    pub x: NumberType,
+    pub y: NumberType,
+    pub z: Option<NumberType>,
+}
 
 extern "C-unwind" fn vector(ctx: Context) -> lu::FnReturn {
     let x = ctx.arg_userdata::<Type>(1).borrow().clone();
@@ -249,7 +464,7 @@ extern "C-unwind" fn vector(ctx: Context) -> lu::FnReturn {
                 || matches!(y.kind, NumberKind::F64 | NumberKind::NaNF64)
                 || matches!(z.kind, NumberKind::F64 | NumberKind::NaNF64)
             {
-                ctx.error_msg("vector components cannot be f64 or NaNF64");
+                ctx.error_msg("vector components cannot be f64 or nanf64");
             }
 
             ctx.push_userdata(Type::Vector(VectorType { x, y, z: Some(z) }));
@@ -259,7 +474,7 @@ extern "C-unwind" fn vector(ctx: Context) -> lu::FnReturn {
             if matches!(x.kind, NumberKind::F64 | NumberKind::NaNF64)
                 || matches!(y.kind, NumberKind::F64 | NumberKind::NaNF64)
             {
-                ctx.error_msg("vector components cannot be f64 or NaNF64");
+                ctx.error_msg("vector components cannot be f64 or nanf64");
             }
 
             ctx.push_userdata(Type::Vector(VectorType { x, y, z: None }));
@@ -271,71 +486,199 @@ extern "C-unwind" fn vector(ctx: Context) -> lu::FnReturn {
     ctx.ret_with(1)
 }
 
-fn len_range(ctx: &Context, offset: u32) -> Range {
-    let min = ctx.arg_number_opt(offset + 1);
-    let max = ctx.arg_number_opt(offset + 2);
-
-    if let Some(min) = min {
-        if min < 0.0 {
-            ctx.error_msg("length minimum cannot be negative");
-        }
-    }
-
-    if let Some(max) = max {
-        if max < 0.0 {
-            ctx.error_msg("length maximum cannot be negative");
-        }
-    }
-
-    if let (Some(min), Some(max)) = (min, max) {
-        if min > max {
-            ctx.error_msg("length minimum cannot be greater than maximum");
-        }
-    }
-
-    Range { min, max }
+#[derive(Clone)]
+pub struct BinaryStringType {
+    pub len: Range,
 }
 
-extern "C-unwind" fn string_binary(ctx: Context) -> lu::FnReturn {
-    let len = len_range(&ctx, 0);
+extern "C-unwind" fn binary_string(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
 
-    ctx.push_userdata(Type::BinaryString(BinaryStringType { len }));
+    if let Some(min) = min
+        && min < 0f64
+    {
+        ctx.error_msg("length min cannot be negative");
+    }
+
+    if let Some(max) = max
+        && max < 0f64
+    {
+        ctx.error_msg("length max cannot be negative");
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max");
+    }
+
+    ctx.push_userdata(Type::BinaryString(BinaryStringType {
+        len: Range { min, max },
+    }));
+
     ctx.ret_with(1)
 }
 
-extern "C-unwind" fn string_utf8(ctx: Context) -> lu::FnReturn {
-    let len = len_range(&ctx, 0);
+#[derive(Clone)]
+pub struct Utf8StringType {
+    pub len: Range,
+}
 
-    ctx.push_userdata(Type::Utf8String(Utf8StringType { len }));
+extern "C-unwind" fn utf8_string(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && min < 0f64
+    {
+        ctx.error_msg("length min cannot be negative");
+    }
+
+    if let Some(max) = max
+        && max < 0f64
+    {
+        ctx.error_msg("length max cannot be negative");
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max");
+    }
+
+    ctx.push_userdata(Type::Utf8String(Utf8StringType {
+        len: Range { min, max },
+    }));
+
     ctx.ret_with(1)
+}
+
+#[derive(Clone)]
+pub struct ArrayType {
+    pub len: Range,
+    pub item: Box<Type>,
 }
 
 extern "C-unwind" fn array(ctx: Context) -> lu::FnReturn {
-    let item = Box::new(ctx.arg_userdata::<Type>(1).borrow().clone());
-    let len = len_range(&ctx, 1);
+    let item = ctx.arg_userdata::<Type>(1).borrow().clone();
+    let min = ctx.arg_number_opt(2);
+    let max = ctx.arg_number_opt(3);
 
-    ctx.push_userdata(Type::Array(ArrayType { len, item }));
+    if let Some(min) = min
+        && min < 0f64
+    {
+        ctx.error_msg("length min cannot be negative");
+    }
+
+    if let Some(max) = max
+        && max < 0f64
+    {
+        ctx.error_msg("length max cannot be negative");
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max");
+    }
+
+    ctx.push_userdata(Type::Array(ArrayType {
+        len: Range { min, max },
+        item: Box::new(item),
+    }));
+
     ctx.ret_with(1)
+}
+
+#[derive(Clone)]
+pub struct SetType {
+    pub len: Range,
+    pub item: Box<Type>,
 }
 
 extern "C-unwind" fn set(ctx: Context) -> lu::FnReturn {
-    let item = Box::new(ctx.arg_userdata::<Type>(1).borrow().clone());
-    let len = len_range(&ctx, 1);
+    let item = ctx.arg_userdata::<Type>(1).borrow().clone();
+    let min = ctx.arg_number_opt(2);
+    let max = ctx.arg_number_opt(3);
 
-    ctx.push_userdata(Type::Set(SetType { len, item }));
+    if let Some(min) = min
+        && min < 0f64
+    {
+        ctx.error_msg("length min cannot be negative");
+    }
+
+    if let Some(max) = max
+        && max < 0f64
+    {
+        ctx.error_msg("length max cannot be negative");
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max");
+    }
+
+    ctx.push_userdata(Type::Set(SetType {
+        len: Range { min, max },
+        item: Box::new(item),
+    }));
+
     ctx.ret_with(1)
+}
+
+#[derive(Clone)]
+pub struct MapType {
+    pub len: Range,
+    pub index: Box<Type>,
+    pub value: Box<Type>,
 }
 
 extern "C-unwind" fn map(ctx: Context) -> lu::FnReturn {
-    let index = Box::new(ctx.arg_userdata::<Type>(1).borrow().clone());
-    let value = Box::new(ctx.arg_userdata::<Type>(2).borrow().clone());
-    let len = len_range(&ctx, 2);
+    let index = ctx.arg_userdata::<Type>(1).borrow().clone();
+    let value = ctx.arg_userdata::<Type>(2).borrow().clone();
+    let min = ctx.arg_number_opt(3);
+    let max = ctx.arg_number_opt(4);
 
-    ctx.push_userdata(Type::Map(MapType { index, value, len }));
+    if let Some(min) = min
+        && min < 0f64
+    {
+        ctx.error_msg("length min cannot be negative");
+    }
+
+    if let Some(max) = max
+        && max < 0f64
+    {
+        ctx.error_msg("length max cannot be negative");
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max");
+    }
+
+    ctx.push_userdata(Type::Map(MapType {
+        len: Range { min, max },
+        index: Box::new(index),
+        value: Box::new(value),
+    }));
+
     ctx.ret_with(1)
 }
 
-extern "C-unwind" fn struckt(ctx: Context) -> lu::FnReturn {
+#[derive(Clone)]
+pub struct StructType {
+    pub fields: Vec<(String, Type)>,
+}
+
+extern "C-unwind" fn strukt(ctx: Context) -> lu::FnReturn {
     ctx.arg_table(1);
     let mut fields = Vec::new();
 

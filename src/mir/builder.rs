@@ -1,20 +1,20 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
-use crate::ir::{Block, Expr, FuncD, FuncK, Instr, Var};
+use crate::mir::{Block, Expr, FuncD, FuncK, Instr, Var};
 
 #[derive(Default)]
 struct RegistryInner {
-    vars: u16,
+    next: u16,
     free: Vec<u16>,
 }
 
 #[derive(Default, Clone)]
-struct Registry {
+pub struct Registry {
     inner: Rc<RefCell<RegistryInner>>,
 }
 
 impl Registry {
-    fn var(&self) -> UninitVar {
+    pub fn var(&self) -> UninitVar {
         let mut inner = self.inner.borrow_mut();
 
         if let Some(var) = inner.free.pop() {
@@ -23,8 +23,8 @@ impl Registry {
                 reg: self.clone(),
             }
         } else {
-            let var = inner.vars;
-            inner.vars += 1;
+            let var = inner.next;
+            inner.next += 1;
             UninitVar {
                 var,
                 reg: self.clone(),
@@ -93,18 +93,12 @@ pub struct Builder {
     out: Vec<Instr>,
 }
 
-impl Display for Builder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for instr in &self.out {
-            write!(f, "{instr}")?;
-        }
-
-        Ok(())
-    }
-}
-
 impl Builder {
-    pub fn block(&mut self, block: impl FnOnce(&mut Builder)) -> Block {
+    pub fn build(self) -> Block {
+        Block { instrs: self.out }
+    }
+
+    pub fn block(&mut self, block: impl FnOnce(&mut Self)) -> Block {
         let start = self.out.len();
         block(self);
 
@@ -119,6 +113,7 @@ impl Builder {
 
     pub fn stmt(&mut self, stmt: impl ToString) {
         let stmt = stmt.to_string();
+
         self.out.push(Instr::Stmt { stmt });
     }
 
@@ -126,7 +121,7 @@ impl Builder {
         let expr = expr.into();
         let msg = msg.to_string();
 
-        self.out.push(Instr::Assert { expr, msg })
+        self.out.push(Instr::Assert { expr, msg });
     }
 
     pub fn alloc_k(&mut self, size: u32) {
@@ -134,25 +129,24 @@ impl Builder {
     }
 
     pub fn alloc_d(&mut self, size: impl Into<Expr>) {
-        self.out.push(Instr::AllocD { size: size.into() });
+        let size = size.into();
+
+        self.out.push(Instr::AllocD { size });
     }
 
     pub fn reserve_k(&mut self, size: u32) -> InitVar {
-        let var = self.reg.var().init();
+        let var = self.var().init();
+        let into = Var::from(&var);
 
-        self.out.push(Instr::ReserveK {
-            into: Var::from(&var),
-            size,
-        });
-
+        self.out.push(Instr::ReserveK { into, size });
         var
     }
 
     pub fn write_k(&mut self, func: impl Into<FuncK>, expr: impl Into<Expr>) {
-        self.out.push(Instr::WriteK {
-            func: func.into(),
-            expr: expr.into(),
-        });
+        let func = func.into();
+        let expr = expr.into();
+
+        self.out.push(Instr::WriteK { func, expr });
     }
 
     pub fn write_d(
@@ -161,11 +155,11 @@ impl Builder {
         expr: impl Into<Expr>,
         size: impl Into<Expr>,
     ) {
-        self.out.push(Instr::WriteD {
-            func: func.into(),
-            expr: expr.into(),
-            size: size.into(),
-        });
+        let func = func.into();
+        let expr = expr.into();
+        let size = size.into();
+
+        self.out.push(Instr::WriteD { func, expr, size });
     }
 
     pub fn write_reserved_k(
@@ -174,92 +168,92 @@ impl Builder {
         at: impl Into<Expr>,
         expr: impl Into<Expr>,
     ) {
-        self.out.push(Instr::WriteReservedK {
-            func: func.into(),
-            at: at.into(),
-            expr: expr.into(),
-        });
+        let func = func.into();
+        let at = at.into();
+        let expr = expr.into();
+
+        self.out.push(Instr::WriteReservedK { func, at, expr });
     }
 
     pub fn read_k(&mut self, func: impl Into<FuncK>) -> InitVar {
-        let var = self.reg.var().init();
+        let var = self.var().init();
+        let into = Var::from(&var);
+        let func = func.into();
 
-        self.out.push(Instr::ReadK {
-            into: Var::from(&var),
-            func: func.into(),
-        });
-
+        self.out.push(Instr::ReadK { into, func });
         var
     }
 
     pub fn read_d(&mut self, func: impl Into<FuncD>, size: impl Into<Expr>) -> InitVar {
-        let var = self.reg.var().init();
+        let var = self.var().init();
+        let into = Var::from(&var);
+        let func = func.into();
+        let size = size.into();
 
-        self.out.push(Instr::ReadD {
-            into: Var::from(&var),
-            func: func.into(),
-            size: size.into(),
-        });
-
+        self.out.push(Instr::ReadD { into, func, size });
         var
     }
 
     pub fn expr(&mut self, expr: impl Into<Expr>) -> InitVar {
-        let var = self.reg.var().init();
+        let var = self.var().init();
+        let into = Var::from(&var);
+        let expr = expr.into();
 
-        self.out.push(Instr::Expr {
-            into: Var::from(&var),
-            expr: expr.into(),
-        });
-
+        self.out.push(Instr::Expr { into, expr });
         var
     }
 
-    pub fn assign(&mut self, var: &InitVar, expr: impl Into<Expr>) {
-        self.out.push(Instr::Assign {
-            into: Var::from(var),
-            expr: expr.into(),
-        });
+    pub fn assign(&mut self, into: &InitVar, expr: impl Into<Expr>) {
+        let expr = expr.into();
+        let into = Var::from(into);
+
+        self.out.push(Instr::Assign { into, expr })
     }
 
-    pub fn assign_index(&mut self, var: &InitVar, index: impl Into<Expr>, expr: impl Into<Expr>) {
-        self.out.push(Instr::AssignIndex {
-            into: Var::from(var),
-            index: index.into(),
-            expr: expr.into(),
-        });
+    pub fn assign_index(&mut self, into: &InitVar, index: impl Into<Expr>, expr: impl Into<Expr>) {
+        let into = Var::from(into);
+        let index = index.into();
+        let expr = expr.into();
+
+        self.out.push(Instr::AssignIndex { into, index, expr });
     }
 
-    pub fn iter_range(
+    pub fn for_range(
         &mut self,
         start: impl Into<Expr>,
         end: impl Into<Expr>,
-        block: impl FnOnce(&mut Builder, &InitVar),
+        block: impl FnOnce(&mut Self, &InitVar),
     ) {
-        let var = self.reg.var().init();
+        let var = self.var().init();
         let block = self.block(|b| block(b, &var));
 
-        self.out.push(Instr::IterRange {
-            into: Var::from(&var),
-            start: start.into(),
-            end: end.into(),
+        let into = Var::from(&var);
+        let start = start.into();
+        let end = end.into();
+
+        self.out.push(Instr::ForRange {
+            into,
+            start,
+            end,
             block,
         });
     }
 
-    pub fn iter_map(
+    pub fn for_table(
         &mut self,
-        map: impl Into<Expr>,
-        block: impl FnOnce(&mut Builder, &InitVar, &InitVar),
+        table: impl Into<Expr>,
+        block: impl FnOnce(&mut Self, &InitVar, &InitVar),
     ) {
-        let index = self.reg.var().init();
-        let value = self.reg.var().init();
+        let index = self.var().init();
+        let value = self.var().init();
         let block = self.block(|b| block(b, &index, &value));
 
-        self.out.push(Instr::IterMap {
+        let table = table.into();
+
+        self.out.push(Instr::ForTable {
             index: Var::from(&index),
             value: Var::from(&value),
-            map: map.into(),
+            table,
             block,
         });
     }
@@ -267,59 +261,50 @@ impl Builder {
     pub fn branch(
         &mut self,
         cond: impl Into<Expr>,
-        then_block: impl FnOnce(&mut Builder),
-        else_block: impl FnOnce(&mut Builder),
+        then_block: impl FnOnce(&mut Self),
+        else_block: impl FnOnce(&mut Self),
     ) {
+        let cond = cond.into();
         let then_block = self.block(then_block);
         let else_block = self.block(else_block);
 
         self.out.push(Instr::Branch {
-            cond: cond.into(),
+            cond,
             then_block,
             else_block,
         });
     }
 
-    pub fn local_function<const ARGS: usize>(
+    pub fn function<const ARGS: usize>(
         &mut self,
-        block: impl FnOnce(&mut Builder, &[InitVar; ARGS]),
+        block: impl FnOnce(&mut Self, &[InitVar; ARGS]),
     ) -> InitVar {
-        let into = self.reg.var().init();
-        let args: [_; ARGS] = std::array::from_fn(|_| self.reg.var().init());
-        let block = self.block(|b| block(b, &args));
+        let into = self.var().init();
+        let vars: [_; ARGS] = std::array::from_fn(|_| self.var().init());
+        let body = self.block(|b| block(b, &vars));
+        let args = vars.iter().map(Var::from).collect();
 
-        self.out.push(Instr::LocalFunction {
+        self.out.push(Instr::Function {
             into: Var::from(&into),
-            args: args.iter().map(Var::from).collect(),
-            body: block,
+            args,
+            body,
         });
 
         into
     }
 
-    pub fn export_table(&mut self, path: impl ToString) {
-        self.out.push(Instr::ExportTable {
-            path: path.to_string(),
-        });
-    }
-
-    pub fn export_function(
-        &mut self,
-        path: impl ToString,
-        args: Vec<String>,
-        rets: Vec<String>,
-        block: impl FnOnce(&mut Builder, &[InitVar]),
-    ) {
-        let path = path.to_string();
-        let vars = args.iter().map(|_| self.var().init()).collect::<Vec<_>>();
+    pub fn function_n(&mut self, n: usize, block: impl FnOnce(&mut Self, &[InitVar])) -> InitVar {
+        let into = self.var().init();
+        let vars = Vec::from_iter((0..n).map(|_| self.var().init()));
         let body = self.block(|b| block(b, &vars));
-        let args = vars.iter().map(Var::from).zip(args).collect::<Vec<_>>();
+        let args = vars.iter().map(Var::from).collect();
 
-        self.out.push(Instr::ExportFunction {
-            path,
+        self.out.push(Instr::Function {
+            into: Var::from(&into),
             args,
-            rets,
             body,
         });
+
+        into
     }
 }

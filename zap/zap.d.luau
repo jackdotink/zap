@@ -34,5 +34,6 @@ declare zap: {
 	map: (ZapType, ZapType, min: number?, max: number?) -> ZapType,
 	struct: ({ [string]: ZapType }, min: number?, max: number?) -> ZapType,
 
-	event: (from: "server" | "client", { ZapType }) -> ZapEvent,
+	reliable: (from: "server" | "client", { ZapType }) -> ZapEvent,
+	unreliable: (from: "server" | "client", { ZapType }) -> ZapEvent,
 }
