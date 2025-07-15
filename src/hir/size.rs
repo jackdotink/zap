@@ -48,7 +48,7 @@ impl Mul<hir::Length> for Size {
     type Output = Self;
 
     fn mul(self, rhs: hir::Length) -> Self::Output {
-        let min = rhs.min.unwrap_or(0);
+        let min = rhs.min;
         let max = rhs.max;
 
         Self {

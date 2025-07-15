@@ -148,7 +148,7 @@ impl From<api::StructType> for StructType {
 
 impl From<Range> for Length {
     fn from(value: Range) -> Self {
-        let min = value.min.map(|n| n as u32);
+        let min = value.min.map(|n| n as u32).unwrap_or(0);
         let max = value.max.map(|n| n as u32);
 
         Length { min, max }
