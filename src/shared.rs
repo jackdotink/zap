@@ -71,7 +71,7 @@ impl Range {
         if self.min == self.max { self.min } else { None }
     }
 
-    pub fn len_kind(&self) -> NumberKind {
+    pub fn kind(&self) -> NumberKind {
         let max = self.max.unwrap_or(f64::MAX);
 
         if max <= u8::MAX as f64 {

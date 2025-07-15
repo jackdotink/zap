@@ -125,6 +125,7 @@ impl Serdes for hir::Type {
             hir::Type::Array(ty) => Box::new(ty.ser(b, ser)),
             hir::Type::Set(ty) => Box::new(ty.ser(b, ser)),
             hir::Type::Map(ty) => Box::new(ty.ser(b, ser)),
+            hir::Type::Enum(ty) => Box::new(ty.ser(b, ser)),
             hir::Type::Struct(ty) => Box::new(ty.ser(b, ser)),
         };
 
@@ -146,6 +147,7 @@ impl Serdes for hir::Type {
             hir::Type::Array(ty) => Box::new(ty.des(b, des)),
             hir::Type::Set(ty) => Box::new(ty.des(b, des)),
             hir::Type::Map(ty) => Box::new(ty.des(b, des)),
+            hir::Type::Enum(ty) => Box::new(ty.des(b, des)),
             hir::Type::Struct(ty) => Box::new(ty.des(b, des)),
         };
 
@@ -435,6 +437,54 @@ impl Serdes for hir::MapType {
             });
 
             tbl
+        }
+    }
+}
+
+impl Serdes for hir::EnumType {
+    fn ser<'ty, 'b, 'ser: 'ty>(
+        &'ty self,
+        b: &'b mut Builder,
+        ser: &'ser Ser,
+    ) -> impl Fn(&mut Builder, Expr) + use<'ty, 'ser> + 'ty {
+        let variants = b.expr(Expr::Table(
+            self.variants
+                .iter()
+                .enumerate()
+                .map(|(i, v)| (Expr::from(v.as_str()), Expr::from(i as f64)))
+                .collect(),
+        ));
+
+        let number = self.number.ser(b, ser);
+
+        move |b: &mut Builder, from: Expr| {
+            apicheck_full!(ser, check_type(b, from.clone(), "string"));
+
+            let value = b.expr(variants.expr().index(from));
+            apicheck_some!(ser, b.assert(value.expr(), "not a valid enum variant"));
+
+            number(b, value.expr());
+        }
+    }
+
+    fn des<'ty, 'b, 'des: 'ty>(
+        &'ty self,
+        b: &'b mut Builder,
+        des: &'des Des,
+    ) -> impl Fn(&mut Builder) -> InitVar + use<'ty, 'des> + 'ty {
+        let variants = b.expr(Expr::Table(
+            self.variants
+                .iter()
+                .enumerate()
+                .map(|(i, v)| (Expr::from(i as f64), Expr::from(v.as_str())))
+                .collect(),
+        ));
+
+        let number = self.number.des(b, des);
+
+        move |b: &mut Builder| {
+            let value = number(b);
+            b.expr(variants.expr().index(&value))
         }
     }
 }

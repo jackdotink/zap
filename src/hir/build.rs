@@ -1,8 +1,8 @@
 use crate::{
     api,
     hir::{
-        ArrayType, BinaryStringType, Event, Item, Length, MapType, NumberType, SetType, StructType,
-        Type, Utf8StringType, VectorType,
+        ArrayType, BinaryStringType, EnumType, Event, Item, Length, MapType, NumberType, SetType,
+        StructType, Type, Utf8StringType, VectorType,
     },
     shared::Range,
 };
@@ -42,6 +42,7 @@ impl From<api::Type> for Type {
             api::Type::Array(ty) => Type::Array(ty.into()),
             api::Type::Set(ty) => Type::Set(ty.into()),
             api::Type::Map(ty) => Type::Map(ty.into()),
+            api::Type::Enum(ty) => Type::Enum(ty.into()),
             api::Type::Struct(ty) => Type::Struct(ty.into()),
         }
     }
@@ -107,6 +108,22 @@ impl From<api::MapType> for MapType {
         let value = Box::new(Type::from(*value.value));
 
         MapType { len, index, value }
+    }
+}
+
+impl From<api::EnumType> for EnumType {
+    fn from(value: api::EnumType) -> Self {
+        let variants = value.variants;
+        let range = Range {
+            min: Some(0f64),
+            max: Some(variants.len() as f64 - 1f64),
+        };
+        let number = NumberType {
+            kind: range.kind(),
+            range,
+        };
+
+        EnumType { variants, number }
     }
 }
 
