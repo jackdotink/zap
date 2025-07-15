@@ -1,9 +1,9 @@
 use crate::{
-    hir::{Event, Item, Type},
+    hir::{Event, Item},
     mir::{
         Expr,
         builder::{Builder, InitVar},
-        serdes::{Des, Ser, Serdes},
+        serdes::{Des, Ser},
     },
     shared::{ApiCheck, NetworkSide},
 };
@@ -12,14 +12,14 @@ mod iter;
 mod send;
 
 #[derive(Clone)]
-pub struct Client {
+pub struct Server {
     pub location: String,
 
     pub ser: Ser,
     pub des: Des,
 }
 
-impl Client {
+impl Server {
     pub fn new(apicheck: ApiCheck) -> Self {
         let location = "result".to_string();
         let ser = Ser {
@@ -32,7 +32,7 @@ impl Client {
             check: false,
         };
 
-        Client { location, ser, des }
+        Server { location, ser, des }
     }
 
     pub fn item(&self, b: &mut Builder, item: &Item) {
@@ -51,15 +51,14 @@ impl Client {
 
     fn event(&self, b: &mut Builder, event: &Event) {
         match event.from {
-            NetworkSide::Server => self.event_recv_iter(b, event),
-            NetworkSide::Client => self.event_send(b, event),
+            NetworkSide::Server => self.event_send(b, event),
+            NetworkSide::Client => self.event_recv_iter(b, event),
         }
     }
 
     fn location(&self, name: &str) -> Self {
-        Client {
+        Server {
             location: self.location.clone() + "." + name,
-
             ser: self.ser.clone(),
             des: self.des.clone(),
         }
@@ -75,7 +74,9 @@ impl Client {
         let var = b.var().init();
         let uuid = event.uuid;
 
-        b.stmt(format!("local {var} = folder:WaitForChild('{uuid}')"));
+        b.stmt(format!("local {var} = Instance.new('RemoteEvent')"));
+        b.stmt(format!("{var}.Name = '{uuid}'"));
+        b.stmt(format!("{var}.Parent = folder"));
 
         var
     }

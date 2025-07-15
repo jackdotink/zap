@@ -94,6 +94,10 @@ pub struct Builder {
 }
 
 impl Builder {
+    pub fn build(self) -> Block {
+        Block { instrs: self.out }
+    }
+
     pub fn block(&mut self, block: impl FnOnce(&mut Self)) -> Block {
         let start = self.out.len();
         block(self);

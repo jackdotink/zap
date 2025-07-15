@@ -50,8 +50,8 @@ pub struct Ser {
 #[derive(Clone)]
 pub struct Des {
     pub apicheck: ApiCheck,
-    pub check: bool,
     pub native: bool,
+    pub check: bool,
 }
 
 macro_rules! apicheck_some {

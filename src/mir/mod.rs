@@ -1,10 +1,54 @@
 use std::fmt::Display;
 
-use crate::shared::NumberKind;
+use crate::{
+    hir,
+    shared::{ApiCheck, NumberKind},
+};
 
 mod builder;
 mod client;
 mod serdes;
+mod server;
+
+pub fn server(items: &hir::Item) -> Result<String, std::fmt::Error> {
+    use std::fmt::Write;
+
+    let mut b = builder::Builder::default();
+    let server = server::Server::new(ApiCheck::Full);
+
+    server.item(&mut b, items);
+
+    let mut s = String::new();
+
+    writeln!(s, "{}", include_str!("../header.luau"))?;
+    writeln!(s, "local result = {{}}")?;
+    writeln!(s, "local folder = Instance.new('Folder')")?;
+    writeln!(s, "folder.Name = 'Z'")?;
+    writeln!(s, "folder.Parent = game.ReplicatedStorage")?;
+    writeln!(s, "{}", b.build())?;
+    writeln!(s, "return result")?;
+
+    Ok(s)
+}
+
+pub fn client(items: &hir::Item) -> Result<String, std::fmt::Error> {
+    use std::fmt::Write;
+
+    let mut b = builder::Builder::default();
+    let client = client::Client::new(ApiCheck::Full);
+
+    client.item(&mut b, items);
+
+    let mut s = String::new();
+
+    writeln!(s, "{}", include_str!("../header.luau"))?;
+    writeln!(s, "local result = {{}}")?;
+    writeln!(s, "local folder = game.ReplicatedStorage:WaitForChild('Z')")?;
+    writeln!(s, "{}", b.build())?;
+    writeln!(s, "return result")?;
+
+    Ok(s)
+}
 
 #[derive(Clone)]
 pub struct Block {
@@ -14,7 +58,7 @@ pub struct Block {
 impl Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for instr in self.instrs.iter() {
-            writeln!(f, "{instr}")?;
+            write!(f, "{instr}")?;
         }
 
         Ok(())
@@ -110,7 +154,7 @@ impl Display for Instr {
             }
 
             Instr::WriteK { func, expr } => {
-                write!(f, "buffer.write{func}(buf, pos {expr});")?;
+                write!(f, "buffer.write{func}(buf, pos, {expr});")?;
                 write!(f, "pos += {};", func.size())?;
             }
 

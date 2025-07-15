@@ -39,6 +39,15 @@ fn main() {
             };
 
             let items = hir::Item::from(items);
+
+            let server = mir::server(&items).unwrap();
+            let client = mir::client(&items).unwrap();
+
+            std::fs::create_dir_all("./zap/out").expect("failed to create zap/out directory");
+            std::fs::write("./zap/out/server.luau", server).expect("failed to write server code");
+            std::fs::write("./zap/out/client.luau", client).expect("failed to write client code");
+
+            println!("Generated server and client code in `zap/out/`");
         }
 
         Command::New => {
