@@ -8,6 +8,8 @@ declare class ZapEvent
 end
 
 declare zap: {
+	boolean: () -> ZapType,
+
 	u8: (min: number?, max: number?) -> ZapNumberType,
 	u16: (min: number?, max: number?) -> ZapNumberType,
 	u32: (min: number?, max: number?) -> ZapNumberType,
