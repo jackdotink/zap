@@ -1,8 +1,8 @@
 use crate::{
     api,
     hir::{
-        ArrayType, BinaryStringType, EnumType, Event, Item, Length, MapType, NumberType, SetType,
-        StructType, Type, Utf8StringType, VectorType,
+        ArrayType, BinaryStringType, BooleanType, EnumType, Event, Item, Length, MapType,
+        NumberType, SetType, StructType, Type, Utf8StringType, VectorType,
     },
     shared::Range,
 };
@@ -35,6 +35,7 @@ impl From<api::Event> for Event {
 impl From<api::Type> for Type {
     fn from(value: api::Type) -> Self {
         match value {
+            api::Type::Boolean(ty) => Type::Boolean(ty.into()),
             api::Type::Number(ty) => Type::Number(ty.into()),
             api::Type::Vector(ty) => Type::Vector(ty.into()),
             api::Type::BinaryString(ty) => Type::BinaryString(ty.into()),
@@ -45,6 +46,12 @@ impl From<api::Type> for Type {
             api::Type::Enum(ty) => Type::Enum(ty.into()),
             api::Type::Struct(ty) => Type::Struct(ty.into()),
         }
+    }
+}
+
+impl From<api::BooleanType> for BooleanType {
+    fn from(_: api::BooleanType) -> Self {
+        BooleanType
     }
 }
 
@@ -141,7 +148,7 @@ impl From<api::StructType> for StructType {
 
 impl From<Range> for Length {
     fn from(value: Range) -> Self {
-        let min = value.min.map(|n| n as u32);
+        let min = value.min.map(|n| n as u32).unwrap_or(0);
         let max = value.max.map(|n| n as u32);
 
         Length { min, max }

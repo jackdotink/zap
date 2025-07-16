@@ -48,7 +48,7 @@ impl Mul<hir::Length> for Size {
     type Output = Self;
 
     fn mul(self, rhs: hir::Length) -> Self::Output {
-        let min = rhs.min.unwrap_or(0);
+        let min = rhs.min;
         let max = rhs.max;
 
         Self {
@@ -83,6 +83,7 @@ impl Size {
 impl hir::Type {
     pub fn size(&self) -> Size {
         match self {
+            hir::Type::Boolean(ty) => ty.size(),
             hir::Type::Number(ty) => ty.size(),
             hir::Type::Vector(ty) => ty.size(),
             hir::Type::BinaryString(ty) => ty.size(),
@@ -93,6 +94,12 @@ impl hir::Type {
             hir::Type::Enum(ty) => ty.size(),
             hir::Type::Struct(ty) => ty.size(),
         }
+    }
+}
+
+impl hir::BooleanType {
+    pub fn size(&self) -> Size {
+        Size::from(1)
     }
 }
 

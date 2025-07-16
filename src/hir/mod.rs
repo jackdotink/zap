@@ -20,6 +20,7 @@ pub struct Event {
 
 #[derive(Clone)]
 pub enum Type {
+    Boolean(BooleanType),
     Number(NumberType),
     Vector(VectorType),
     BinaryString(BinaryStringType),
@@ -30,6 +31,9 @@ pub enum Type {
     Enum(EnumType),
     Struct(StructType),
 }
+
+#[derive(Clone)]
+pub struct BooleanType;
 
 #[derive(Clone)]
 pub struct NumberType {
@@ -86,13 +90,19 @@ pub struct StructType {
 
 #[derive(Clone, Copy)]
 pub struct Length {
-    pub min: Option<u32>,
+    pub min: u32,
     pub max: Option<u32>,
 }
 
 impl Length {
     pub fn exact(&self) -> Option<u32> {
-        if self.min == self.max { self.min } else { None }
+        if let Some(max) = self.max
+            && self.min == max
+        {
+            Some(max)
+        } else {
+            None
+        }
     }
 
     pub fn kind(&self) -> NumberKind {
@@ -111,7 +121,7 @@ impl Length {
         NumberType {
             kind: self.kind(),
             range: Range {
-                min: self.min.map(|min| min as f64),
+                min: Some(self.min as f64),
                 max: self.max.map(|max| max as f64),
             },
         }
@@ -121,7 +131,7 @@ impl Length {
 impl From<Length> for Range {
     fn from(value: Length) -> Self {
         Range {
-            min: value.min.map(|min| min as f64),
+            min: Some(value.min as f64),
             max: value.max.map(|max| max as f64),
         }
     }

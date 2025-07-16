@@ -1,7 +1,7 @@
 use crate::{
     hir,
     mir::{
-        Expr, FuncD,
+        Expr, FuncD, FuncK,
         builder::{Builder, InitVar},
     },
     shared::{ApiCheck, NumberKind, Range},
@@ -118,6 +118,7 @@ impl Serdes for hir::Type {
     ) -> impl Fn(&mut Builder, Expr) + use<'ty, 'ser> + 'ty {
         #[allow(clippy::type_complexity)]
         let cb: Box<dyn Fn(&mut Builder, Expr)> = match self {
+            hir::Type::Boolean(ty) => Box::new(ty.ser(b, ser)),
             hir::Type::Number(ty) => Box::new(ty.ser(b, ser)),
             hir::Type::Vector(ty) => Box::new(ty.ser(b, ser)),
             hir::Type::BinaryString(ty) => Box::new(ty.ser(b, ser)),
@@ -140,6 +141,7 @@ impl Serdes for hir::Type {
         des: &'des Des,
     ) -> impl Fn(&mut Builder) -> InitVar + use<'ty, 'des> + 'ty {
         let cb: Box<dyn Fn(&mut Builder) -> InitVar> = match self {
+            hir::Type::Boolean(ty) => Box::new(ty.des(b, des)),
             hir::Type::Number(ty) => Box::new(ty.des(b, des)),
             hir::Type::Vector(ty) => Box::new(ty.des(b, des)),
             hir::Type::BinaryString(ty) => Box::new(ty.des(b, des)),
@@ -152,6 +154,32 @@ impl Serdes for hir::Type {
         };
 
         move |b: &mut Builder| cb(b)
+    }
+}
+
+impl Serdes for hir::BooleanType {
+    fn ser<'ty, 'b, 'ser: 'ty>(
+        &'ty self,
+        _: &'b mut Builder,
+        ser: &'ser Ser,
+    ) -> impl Fn(&mut Builder, Expr) + use<'ty, 'ser> + 'ty {
+        move |b: &mut Builder, from: Expr| {
+            apicheck_full!(ser, check_type(b, from.clone(), "boolean"));
+
+            b.alloc_k(1);
+            b.write_k(FuncK::U8, from.bit());
+        }
+    }
+
+    fn des<'ty, 'b, 'des: 'ty>(
+        &'ty self,
+        _: &'b mut Builder,
+        _: &'des Des,
+    ) -> impl Fn(&mut Builder) -> InitVar + use<'ty, 'des> + 'ty {
+        move |b: &mut Builder| {
+            let value = b.read_k(FuncK::U8);
+            b.expr(value.expr().eq(1))
+        }
     }
 }
 

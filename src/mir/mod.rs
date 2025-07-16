@@ -313,6 +313,7 @@ pub enum Expr {
     Vector(Box<Expr>, Box<Expr>, Box<Expr>),
     Type(Box<Expr>),
     Utf8(Box<Expr>),
+    Bit(Box<Expr>),
 }
 
 impl From<bool> for Expr {
@@ -368,6 +369,10 @@ impl Expr {
         Expr::Binary(Box::new(self), BinaryOp::Mul, Box::new(rhs.into()))
     }
 
+    pub fn mud(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Binary(Box::new(self), BinaryOp::Mod, Box::new(rhs.into()))
+    }
+
     pub fn eq(self, rhs: impl Into<Expr>) -> Self {
         Expr::Binary(Box::new(self), BinaryOp::Eq, Box::new(rhs.into()))
     }
@@ -390,6 +395,10 @@ impl Expr {
 
     pub fn len(self) -> Self {
         Expr::Unary(UnaryOp::Len, Box::new(self))
+    }
+
+    pub fn bit(self) -> Self {
+        Expr::Bit(Box::new(self))
     }
 }
 
@@ -423,6 +432,7 @@ impl Display for Expr {
             Expr::Vector(x, y, z) => write!(f, "vector.create({x}, {y}, {z})"),
             Expr::Type(expr) => write!(f, "type({expr})"),
             Expr::Utf8(expr) => write!(f, "utf8.len({expr})"),
+            Expr::Bit(expr) => write!(f, "bit[{expr}]"),
         }
     }
 }
@@ -433,6 +443,7 @@ pub enum BinaryOp {
 
     Add,
     Mul,
+    Mod,
 
     Eq,
     Lt,
@@ -447,6 +458,7 @@ impl Display for BinaryOp {
             BinaryOp::And => write!(f, "and"),
             BinaryOp::Add => write!(f, "+"),
             BinaryOp::Mul => write!(f, "*"),
+            BinaryOp::Mod => write!(f, "%"),
             BinaryOp::Eq => write!(f, "=="),
             BinaryOp::Lt => write!(f, "<"),
             BinaryOp::Gt => write!(f, ">"),

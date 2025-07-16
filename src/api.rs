@@ -110,6 +110,7 @@ fn library() -> lu::Library<Config> {
 
     lu::Library::default()
         .with_function_norm("event", event)
+        .with_function_norm("boolean", boolean)
         .with_function_norm("u8", u8)
         .with_function_norm("u16", u16)
         .with_function_norm("u32", u32)
@@ -169,6 +170,7 @@ extern "C-unwind" fn event(ctx: Context) -> lu::FnReturn {
 
 #[derive(lu::Userdata, Clone)]
 pub enum Type {
+    Boolean(BooleanType),
     Number(NumberType),
     Vector(VectorType),
     BinaryString(BinaryStringType),
@@ -178,6 +180,14 @@ pub enum Type {
     Map(MapType),
     Enum(EnumType),
     Struct(StructType),
+}
+
+#[derive(Clone)]
+pub struct BooleanType;
+
+extern "C-unwind" fn boolean(ctx: Context) -> lu::FnReturn {
+    ctx.push_userdata(Type::Boolean(BooleanType));
+    ctx.ret_with(1)
 }
 
 #[derive(Clone)]
