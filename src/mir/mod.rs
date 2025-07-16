@@ -412,7 +412,7 @@ impl Display for Expr {
             Expr::Table(fields) => {
                 let fields = fields
                     .iter()
-                    .map(|(i, v)| format!("{i} = {v}"))
+                    .map(|(i, v)| format!("[{i}] = {v}"))
                     .collect::<Vec<_>>()
                     .join(", ");
 
