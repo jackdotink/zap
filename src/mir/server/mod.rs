@@ -7,7 +7,7 @@ use crate::{
         builder::{Builder, InitVar},
         serdes::{Des, Ser},
     },
-    shared::{ApiCheck, NetworkSide, Options},
+    shared::{NetworkSide, Options},
 };
 
 mod iter;
