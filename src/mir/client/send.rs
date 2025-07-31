@@ -36,7 +36,7 @@ impl Client {
             b.stmt(format!("{remote}:FireServer(out)"));
         });
 
-        self.export(b, "send", &send);
+        self.export(b, &self.name("send"), &send);
     }
 
     pub fn event_send_0data(&self, b: &mut Builder, event: &Event) {
@@ -46,6 +46,6 @@ impl Client {
             b.stmt(format!("{remote}:FireServer()"));
         });
 
-        self.export(b, "send", &send);
+        self.export(b, &self.name("send"), &send);
     }
 }

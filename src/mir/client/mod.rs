@@ -16,6 +16,7 @@ mod send;
 #[derive(Clone)]
 pub struct Client {
     pub location: String,
+    pub options: Rc<Options>,
 
     pub ser: Ser,
     pub des: Des,
@@ -24,6 +25,7 @@ pub struct Client {
 impl Default for Client {
     fn default() -> Self {
         let location = "result".to_string();
+        let options = Rc::new(Options::default());
 
         let ser = Ser {
             options: Rc::new(Options::default()),
@@ -36,7 +38,12 @@ impl Default for Client {
             check: false,
         };
 
-        Client { location, ser, des }
+        Client {
+            location,
+            options,
+            ser,
+            des,
+        }
     }
 }
 
@@ -63,18 +70,25 @@ impl Client {
     }
 
     fn child(&self, options: &Rc<Options>, name: &str) -> Self {
+        let options = Rc::clone(options);
+
         let mut ser = self.ser.clone();
-        ser.options = Rc::clone(options);
+        ser.options = Rc::clone(&options);
 
         let mut des = self.des.clone();
-        des.options = Rc::clone(options);
+        des.options = Rc::clone(&options);
 
         Client {
             location: self.location.clone() + "." + name,
+            options,
 
             ser,
             des,
         }
+    }
+
+    fn name(&self, words: &'static str) -> String {
+        self.options.casing().fmt(words)
     }
 
     fn export(&self, b: &mut Builder, name: &str, expr: impl Into<Expr>) {

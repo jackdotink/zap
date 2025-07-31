@@ -42,7 +42,7 @@ impl Client {
             b.stmt(format!("return {next}, {captured}, 1"));
         });
 
-        self.export(b, "iter", &iter);
+        self.export(b, &self.name("iter"), &iter);
     }
 
     fn event_recv_iter_1data(&self, b: &mut Builder, event: &Event) {
@@ -54,7 +54,7 @@ impl Client {
             b.stmt(format!("return {captured}"));
         });
 
-        self.export(b, "iter", &iter);
+        self.export(b, &self.name("iter"), &iter);
     }
 
     fn event_recv_iter_0data(&self, b: &mut Builder, event: &Event) {
@@ -77,7 +77,7 @@ impl Client {
             b.stmt(format!("return {next}, {captured}, 0"));
         });
 
-        self.export(b, "iter", &iter);
+        self.export(b, &self.name("iter"), &iter);
     }
 
     fn event_recv_queue(&self, b: &mut Builder, event: &Event) -> InitVar {

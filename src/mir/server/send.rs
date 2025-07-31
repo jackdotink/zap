@@ -37,7 +37,7 @@ impl Server {
             b.stmt(format!("{remote}:FireClient({player}, out)"));
         });
 
-        self.export(b, "send", &send);
+        self.export(b, &self.name("send"), &send);
     }
 
     fn event_send_0data(&self, b: &mut Builder, event: &Event) {
@@ -47,6 +47,6 @@ impl Server {
             b.stmt(format!("{remote}:FireClient({player})"));
         });
 
-        self.export(b, "send", &send);
+        self.export(b, &self.name("send"), &send);
     }
 }
