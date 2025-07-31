@@ -182,6 +182,7 @@ extern "C-unwind" fn options(ctx: Context) -> lu::FnReturn {
         ControlFlow::<()>::Continue(())
     });
 
+    ctx.push_userdata(options);
     ctx.ret_with(1)
 }
 
