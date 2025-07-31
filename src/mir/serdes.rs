@@ -213,7 +213,15 @@ impl Serdes for hir::NumberType {
                 check!(des, b.assert(value.expr().eq(&value), "value is nan"));
             }
 
-            value
+            if matches!(self.kind, NumberKind::U24 | NumberKind::I24) {
+                if des.native {
+                    b.expr(value.expr().band(0x00FFFFFF))
+                } else {
+                    b.expr(value.expr().mud(256 * 256 * 256))
+                }
+            } else {
+                value
+            }
         }
     }
 }

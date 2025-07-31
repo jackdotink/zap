@@ -141,9 +141,9 @@ impl Display for Instr {
 
             Instr::Assert { expr, msg } => write!(f, "if not {expr} then error(\"{msg}\") end;")?,
 
-            Instr::AllocK { size } => write!(f, "if pos + {size} > len then resize({size}) end;")?,
+            Instr::AllocK { size } => write!(f, "if pos + {size} >= len then resize({size}) end;")?,
 
-            Instr::AllocD { size } => write!(f, "if pos + {size} > len then resize({size}) end;")?,
+            Instr::AllocD { size } => write!(f, "if pos + {size} >= len then resize({size}) end;")?,
 
             Instr::ReserveK { into, size } => {
                 write!(f, "local {into} = pos;")?;
@@ -228,6 +228,13 @@ pub enum FuncK {
     I16,
     I32,
 
+    // u24 and i24 are special cases that are not natively supported in the
+    // buffer library. at serdes time special instrs are emitted to handle
+    // these types. at instr display time these two types are written and read
+    // as u32 and i32.
+    U24,
+    I24,
+
     F32,
     F64,
 }
@@ -237,10 +244,12 @@ impl From<NumberKind> for FuncK {
         match value {
             NumberKind::U8 => FuncK::U8,
             NumberKind::U16 => FuncK::U16,
+            NumberKind::U24 => FuncK::U24,
             NumberKind::U32 => FuncK::U32,
 
             NumberKind::I8 => FuncK::I8,
             NumberKind::I16 => FuncK::I16,
+            NumberKind::I24 => FuncK::I24,
             NumberKind::I32 => FuncK::I32,
 
             NumberKind::F32 | NumberKind::NaNF32 => FuncK::F32,
@@ -254,6 +263,7 @@ impl FuncK {
         match self {
             Self::U8 | Self::I8 => 1,
             Self::U16 | Self::I16 => 2,
+            Self::U24 | Self::I24 => 3,
             Self::U32 | Self::I32 => 4,
             Self::F32 => 4,
             Self::F64 => 8,
@@ -266,10 +276,12 @@ impl Display for FuncK {
         match self {
             Self::U8 => write!(f, "u8"),
             Self::U16 => write!(f, "u16"),
+            Self::U24 => write!(f, "u32"),
             Self::U32 => write!(f, "u32"),
 
             Self::I8 => write!(f, "i8"),
             Self::I16 => write!(f, "i16"),
+            Self::I24 => write!(f, "i32"),
             Self::I32 => write!(f, "i32"),
 
             Self::F32 => write!(f, "f32"),
@@ -311,6 +323,8 @@ pub enum Expr {
     Type(Box<Expr>),
     Utf8(Box<Expr>),
     Bit(Box<Expr>),
+
+    Band(Box<Expr>, Box<Expr>),
 }
 
 impl From<bool> for Expr {
@@ -397,6 +411,10 @@ impl Expr {
     pub fn bit(self) -> Self {
         Expr::Bit(Box::new(self))
     }
+
+    pub fn band(self, rhs: impl Into<Expr>) -> Self {
+        Expr::Band(Box::new(self), Box::new(rhs.into()))
+    }
 }
 
 impl Display for Expr {
@@ -430,6 +448,8 @@ impl Display for Expr {
             Expr::Type(expr) => write!(f, "type({expr})"),
             Expr::Utf8(expr) => write!(f, "utf8.len({expr})"),
             Expr::Bit(expr) => write!(f, "bit[{expr}]"),
+
+            Expr::Band(lhs, rhs) => write!(f, "bit32.band({lhs}, {rhs})"),
         }
     }
 }

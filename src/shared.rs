@@ -102,10 +102,12 @@ impl Options {
 pub enum NumberKind {
     U8,
     U16,
+    U24,
     U32,
 
     I8,
     I16,
+    I24,
     I32,
 
     F32,
@@ -120,6 +122,7 @@ impl NumberKind {
         match self {
             Self::U8 | Self::I8 => 1,
             Self::U16 | Self::I16 => 2,
+            Self::U24 | Self::I24 => 3,
             Self::U32 | Self::I32 => 4,
             Self::F32 | Self::NaNF32 => 4,
             Self::F64 | Self::NaNF64 => 8,
@@ -130,12 +133,14 @@ impl NumberKind {
         match self {
             Self::U8 => 0.0,
             Self::U16 => 0.0,
+            Self::U24 => 0.0,
             Self::U32 => 0.0,
             Self::I8 => i8::MIN as f64,
             Self::I16 => i16::MIN as f64,
+            Self::I24 => -2f64.powi(23),
             Self::I32 => i32::MIN as f64,
             Self::F32 | Self::NaNF32 => f32::MIN as f64,
-            Self::F64 | Self::NaNF64 => f64::MIN as f64,
+            Self::F64 | Self::NaNF64 => f64::MIN,
         }
     }
 
@@ -143,12 +148,14 @@ impl NumberKind {
         match self {
             Self::U8 => u8::MAX as f64,
             Self::U16 => u16::MAX as f64,
+            Self::U24 => 2f64.powi(24) - 1.0,
             Self::U32 => u32::MAX as f64,
             Self::I8 => i8::MAX as f64,
             Self::I16 => i16::MAX as f64,
+            Self::I24 => 2f64.powi(23) - 1.0,
             Self::I32 => i32::MAX as f64,
             Self::F32 | Self::NaNF32 => f32::MAX as f64,
-            Self::F64 | Self::NaNF64 => f64::MAX as f64,
+            Self::F64 | Self::NaNF64 => f64::MAX,
         }
     }
 }

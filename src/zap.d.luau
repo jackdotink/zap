@@ -15,10 +15,12 @@ declare zap: {
 
 	u8: (min: number?, max: number?) -> ZapNumberType,
 	u16: (min: number?, max: number?) -> ZapNumberType,
+	u24: (min: number?, max: number?) -> ZapNumberType,
 	u32: (min: number?, max: number?) -> ZapNumberType,
 
 	i8: (min: number?, max: number?) -> ZapNumberType,
 	i16: (min: number?, max: number?) -> ZapNumberType,
+	i24: (min: number?, max: number?) -> ZapNumberType,
 	i32: (min: number?, max: number?) -> ZapNumberType,
 
 	f32: (min: number?, max: number?) -> ZapNumberType,
