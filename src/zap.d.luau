@@ -42,7 +42,7 @@ declare zap: {
 	event: (from: "server" | "client", { ZapType }) -> ZapEvent,
 
 	options: ({
-		casing: "lower" | "camel" | "pascal" | "snake",
-		apicheck: "none" | "some" | "full",
+		casing: "lower" | "camel" | "pascal" | "snake"?,
+		apicheck: "none" | "some" | "full"?,
 	}) -> ZapOptions,
 }
