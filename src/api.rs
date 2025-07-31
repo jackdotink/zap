@@ -24,6 +24,7 @@ pub fn exec(source: &[u8]) -> Result<Table, String> {
     state.open_std();
     state.open_userdata::<Type>();
     state.open_userdata::<Event>();
+    state.open_userdata::<Options>();
     state.open_library("zap", library());
     state.sandbox();
 
