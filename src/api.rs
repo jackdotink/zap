@@ -1,11 +1,8 @@
-use std::ops::ControlFlow;
+use std::{ops::ControlFlow, rc::Rc};
 
 use uuid::Uuid;
 
-use crate::{
-    shared::NetworkSide,
-    shared::{NumberKind, Range},
-};
+use crate::shared::{ApiCheck, Casing, NetworkSide, NumberKind, Options, Range};
 
 #[derive(Default)]
 struct Config;
@@ -19,7 +16,7 @@ impl lu::Config for Config {
 
 type Context = lu::Context<Config>;
 
-pub fn exec(source: &[u8]) -> Result<Item, String> {
+pub fn exec(source: &[u8]) -> Result<Table, String> {
     let compiler = lu::Compiler::default();
     let bytecode = compiler.compile(source);
 
@@ -54,52 +51,62 @@ pub fn exec(source: &[u8]) -> Result<Item, String> {
             Err(format!("yielded: {trace}"))
         },
 
-        _ => convert(stack).map(Item::Table),
+        _ => table(stack, Rc::new(Options::default())),
     }
 }
 
 #[derive(Clone)]
 pub enum Item {
-    Table(Vec<(String, Item)>),
+    Table(Table),
     Event(Event),
 }
 
-fn convert(stack: &lu::Stack<Config>) -> Result<Vec<(String, Item)>, String> {
+fn table(stack: &lu::Stack<Config>, parent: Rc<Options>) -> Result<Table, String> {
+    let mut options = Rc::new(Options::default().with_parent(parent));
     let mut items = Vec::new();
 
-    if let Some(err) = stack.iter(-1, || {
-        let Some(name) = stack.to_string_str(-2) else {
-            return ControlFlow::Break("item name must be a string".to_string());
-        };
+    let result = stack.iter(-1, || {
+        if stack.to_number(-2).is_some_and(|n| n == 1.0) {
+            options = match stack.to_userdata::<Options>(-1) {
+                Some(options) => Rc::new(options.borrow().clone()),
+                None => return ControlFlow::Break("index 1 may only contain options".to_string()),
+            };
+        } else {
+            let Some(name) = stack.to_string_str(-2) else {
+                return ControlFlow::Break("item name must be a string".to_string());
+            };
 
-        match stack.type_of(-1) {
-            lu::Type::Table => {
-                let item = match convert(stack).map(Item::Table) {
-                    Ok(item) => item,
-                    Err(err) => return ControlFlow::Break(err),
-                };
+            match stack.type_of(-1) {
+                lu::Type::Table => {
+                    let table = match table(stack, options.clone()) {
+                        Ok(table) => table,
+                        Err(err) => return ControlFlow::Break(err),
+                    };
 
-                items.push((name.to_owned(), item));
-            }
+                    items.push((name.to_owned(), Item::Table(table)));
+                }
 
-            lu::Type::Userdata => {
-                let Some(event) = stack.to_userdata::<Event>(-1) else {
+                lu::Type::Userdata => {
+                    let Some(event) = stack.to_userdata::<Event>(-1) else {
+                        return ControlFlow::Break(format!("item {name} must be a table or event"));
+                    };
+
+                    items.push((name.to_owned(), Item::Event(event.borrow().clone())));
+                }
+
+                _ => {
                     return ControlFlow::Break(format!("item {name} must be a table or event"));
-                };
-
-                items.push((name.to_owned(), Item::Event(event.borrow().clone())));
-            }
-
-            _ => {
-                return ControlFlow::Break(format!("item {name} must be a table or event"));
+                }
             }
         }
 
         ControlFlow::Continue(())
-    }) {
+    });
+
+    if let Some(err) = result {
         Err(err)
     } else {
-        Ok(items)
+        Ok(Table { options, items })
     }
 }
 
@@ -128,6 +135,53 @@ fn library() -> lu::Library<Config> {
         .with_function_norm("map", map)
         .with_function_norm("enum", enumn)
         .with_function_norm("struct", strukt)
+}
+
+#[derive(Clone)]
+pub struct Table {
+    pub options: Rc<Options>,
+    pub items: Vec<(String, Item)>,
+}
+
+extern "C-unwind" fn options(ctx: Context) -> lu::FnReturn {
+    let mut options = Options::default();
+    ctx.arg_table(1);
+
+    ctx.iter(1, || {
+        match ctx.to_string_str(-2) {
+            Some("apicheck") => {
+                let value = match ctx.to_string_str(-1) {
+                    Some("none") => ApiCheck::None,
+                    Some("some") => ApiCheck::Some,
+                    Some("full") => ApiCheck::Full,
+
+                    _ => ctx.error_msg("apicheck must be 'none', 'some', or 'full'"),
+                };
+
+                options = options.clone().with_apicheck(value);
+            }
+
+            Some("casing") => {
+                let value = match ctx.to_string_str(-1) {
+                    Some("lower") => Casing::Lower,
+                    Some("snake") => Casing::Snake,
+                    Some("camel") => Casing::Camel,
+                    Some("pascal") => Casing::Pascal,
+
+                    _ => ctx.error_msg("casing must be 'lower', 'snake', 'camel', or 'pascal'"),
+                };
+
+                options = options.clone().with_casing(value);
+            }
+
+            Some(str) => ctx.error_msg(format!("unknown option: {str}")),
+            None => ctx.error_msg("option names must be strings"),
+        }
+
+        ControlFlow::<()>::Continue(())
+    });
+
+    ctx.ret_with(1)
 }
 
 #[derive(lu::Userdata, Clone)]

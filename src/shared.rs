@@ -1,8 +1,101 @@
-#[derive(Clone, Copy)]
+use std::rc::Rc;
+
+#[derive(Default, Clone, Copy)]
 pub enum ApiCheck {
     None,
+    #[default]
     Some,
     Full,
+}
+
+#[derive(Default, Clone, Copy)]
+pub enum Casing {
+    #[default]
+    Lower,
+    Snake,
+    Camel,
+    Pascal,
+}
+
+impl Casing {
+    pub fn fmt(&self, words: &'static str) -> String {
+        fn capitalize(word: &str) -> String {
+            let mut chars = word.chars();
+            format!(
+                "{}{}",
+                chars.next().unwrap().to_ascii_uppercase(),
+                chars.as_str()
+            )
+        }
+
+        let words = words.split(' ').collect::<Vec<_>>();
+        match self {
+            Self::Lower => words.concat(),
+            Self::Snake => words.join("_"),
+            Self::Camel => words
+                .iter()
+                .enumerate()
+                .map(|(i, word)| {
+                    if i == 0 {
+                        word.to_string()
+                    } else {
+                        capitalize(word)
+                    }
+                })
+                .collect(),
+            Self::Pascal => words.into_iter().map(capitalize).collect(),
+        }
+    }
+}
+
+#[derive(lu::Userdata, Default, Clone)]
+pub struct Options {
+    parent: Option<Rc<Options>>,
+
+    apicheck: Option<ApiCheck>,
+    casing: Option<Casing>,
+}
+
+impl Options {
+    pub fn with_parent(self, parent: Rc<Options>) -> Self {
+        Self {
+            parent: Some(parent),
+            apicheck: self.apicheck,
+            casing: self.casing,
+        }
+    }
+
+    pub fn with_apicheck(self, apicheck: ApiCheck) -> Self {
+        Self {
+            parent: self.parent,
+            apicheck: Some(apicheck),
+            casing: self.casing,
+        }
+    }
+
+    pub fn with_casing(self, casing: Casing) -> Self {
+        Self {
+            parent: self.parent,
+            apicheck: self.apicheck,
+            casing: Some(casing),
+        }
+    }
+
+    pub fn apicheck(&self) -> ApiCheck {
+        self.apicheck.unwrap_or_else(|| {
+            self.parent
+                .as_ref()
+                .map_or(ApiCheck::default(), |parent| parent.apicheck())
+        })
+    }
+
+    pub fn casing(&self) -> Casing {
+        self.casing.unwrap_or_else(|| {
+            self.parent
+                .as_ref()
+                .map_or(Casing::default(), |parent| parent.casing())
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
