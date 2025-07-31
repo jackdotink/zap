@@ -7,6 +7,9 @@ end
 declare class ZapEvent
 end
 
+declare class ZapOptions
+end
+
 declare zap: {
 	boolean: () -> ZapType,
 
@@ -41,5 +44,5 @@ declare zap: {
 	options: ({
 		casing: "lower" | "camel" | "pascal" | "snake",
 		apicheck: "none" | "some" | "full",
-	}),
+	}) -> ZapOptions,
 }
