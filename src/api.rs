@@ -116,6 +116,7 @@ fn library() -> lu::Library<Config> {
         .with_function_norm("utf8", utf8_string);
 
     lu::Library::default()
+        .with_function_norm("options", options)
         .with_function_norm("event", event)
         .with_function_norm("boolean", boolean)
         .with_function_norm("u8", u8)

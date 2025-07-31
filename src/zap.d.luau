@@ -37,4 +37,9 @@ declare zap: {
 	struct: ({ [string]: ZapType }, min: number?, max: number?) -> ZapType,
 
 	event: (from: "server" | "client", { ZapType }) -> ZapEvent,
+
+	options: ({
+		casing: "lower" | "camel" | "pascal" | "snake",
+		apicheck: "none" | "some" | "full",
+	}),
 }
