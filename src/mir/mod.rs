@@ -1,22 +1,19 @@
 use std::fmt::Display;
 
-use crate::{
-    hir,
-    shared::{ApiCheck, NumberKind},
-};
+use crate::{hir, shared::NumberKind};
 
 mod builder;
 mod client;
 mod serdes;
 mod server;
 
-pub fn server(items: &hir::Item) -> Result<String, std::fmt::Error> {
+pub fn server(table: &hir::Table) -> Result<String, std::fmt::Error> {
     use std::fmt::Write;
 
     let mut b = builder::Builder::default();
-    let server = server::Server::new(ApiCheck::Full);
+    let server = server::Server::default();
 
-    server.item(&mut b, items);
+    server.table(&mut b, table);
 
     let mut s = String::new();
 
@@ -31,13 +28,13 @@ pub fn server(items: &hir::Item) -> Result<String, std::fmt::Error> {
     Ok(s)
 }
 
-pub fn client(items: &hir::Item) -> Result<String, std::fmt::Error> {
+pub fn client(table: &hir::Table) -> Result<String, std::fmt::Error> {
     use std::fmt::Write;
 
     let mut b = builder::Builder::default();
-    let client = client::Client::new(ApiCheck::Full);
+    let client = client::Client::default();
 
-    client.item(&mut b, items);
+    client.table(&mut b, table);
 
     let mut s = String::new();
 

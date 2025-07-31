@@ -30,7 +30,7 @@ fn main() {
     match cli.command {
         Command::Run => {
             let source = std::fs::read("./zap/net.luau").expect("failed to read zap/net.luau");
-            let items = match api::exec(&source) {
+            let table = match api::exec(&source) {
                 Ok(items) => items,
                 Err(e) => {
                     eprintln!("error: {e}");
@@ -38,10 +38,10 @@ fn main() {
                 }
             };
 
-            let items = hir::Item::from(items);
+            let table = hir::Table::from(table);
 
-            let server = mir::server(&items).unwrap();
-            let client = mir::client(&items).unwrap();
+            let server = mir::server(&table).unwrap();
+            let client = mir::client(&table).unwrap();
 
             std::fs::create_dir_all("./zap/out").expect("failed to create zap/out directory");
             std::fs::write("./zap/out/server.luau", server).expect("failed to write server code");

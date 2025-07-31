@@ -1,14 +1,22 @@
+use std::rc::Rc;
+
 use uuid::Uuid;
 
-use crate::shared::{NetworkSide, NumberKind, Range};
+use crate::shared::{NetworkSide, NumberKind, Options, Range};
 
 mod build;
 mod size;
 
 #[derive(Clone)]
 pub enum Item {
-    Table(Vec<(String, Item)>),
+    Table(Table),
     Event(Event),
+}
+
+#[derive(Clone)]
+pub struct Table {
+    pub options: Rc<Options>,
+    pub items: Vec<(String, Item)>,
 }
 
 #[derive(Clone)]

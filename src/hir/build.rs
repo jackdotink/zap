@@ -2,7 +2,7 @@ use crate::{
     api,
     hir::{
         ArrayType, BinaryStringType, BooleanType, EnumType, Event, Item, Length, MapType,
-        NumberType, SetType, StructType, Type, Utf8StringType, VectorType,
+        NumberType, SetType, StructType, Table, Type, Utf8StringType, VectorType,
     },
     shared::Range,
 };
@@ -10,15 +10,22 @@ use crate::{
 impl From<api::Item> for Item {
     fn from(value: api::Item) -> Self {
         match value {
-            api::Item::Table(table) => Item::Table(
-                table
-                    .into_iter()
-                    .map(|(name, item)| (name, Item::from(item)))
-                    .collect(),
-            ),
-
+            api::Item::Table(table) => Item::Table(table.into()),
             api::Item::Event(event) => Item::Event(event.into()),
         }
+    }
+}
+
+impl From<api::Table> for Table {
+    fn from(value: api::Table) -> Self {
+        let options = value.options;
+        let items = value
+            .items
+            .into_iter()
+            .map(|(name, item)| (name, Item::from(item)))
+            .collect();
+
+        Table { options, items }
     }
 }
 

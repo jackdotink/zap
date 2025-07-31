@@ -1,10 +1,12 @@
+use std::rc::Rc;
+
 use crate::{
     hir,
     mir::{
         Expr, FuncD, FuncK,
         builder::{Builder, InitVar},
     },
-    shared::{ApiCheck, NumberKind, Range},
+    shared::{ApiCheck, NumberKind, Options, Range},
 };
 
 fn check_type(b: &mut Builder, expr: impl Into<Expr>, ty: &'static str) {
@@ -43,26 +45,26 @@ fn check_utf8(b: &mut Builder, expr: impl Into<Expr>) {
 
 #[derive(Clone)]
 pub struct Ser {
-    pub apicheck: ApiCheck,
+    pub options: Rc<Options>,
     pub native: bool,
 }
 
 #[derive(Clone)]
 pub struct Des {
-    pub apicheck: ApiCheck,
+    pub options: Rc<Options>,
     pub native: bool,
     pub check: bool,
 }
 
 macro_rules! apicheck_some {
     ($serdes:expr, $block:block) => {
-        if matches!($serdes.apicheck, ApiCheck::Some | ApiCheck::Full) {
+        if matches!($serdes.options.apicheck(), ApiCheck::Some | ApiCheck::Full) {
             $block
         }
     };
 
     ($serdes:expr, $stmt:stmt) => {
-        if matches!($serdes.apicheck, ApiCheck::Some | ApiCheck::Full) {
+        if matches!($serdes.options.apicheck(), ApiCheck::Some | ApiCheck::Full) {
             $stmt
         }
     };
@@ -70,13 +72,13 @@ macro_rules! apicheck_some {
 
 macro_rules! apicheck_full {
     ($serdes:expr, $block:block) => {
-        if matches!($serdes.apicheck, ApiCheck::Full) {
+        if matches!($serdes.options.apicheck(), ApiCheck::Full) {
             $block
         }
     };
 
     ($serdes:expr, $stmt:stmt) => {
-        if matches!($serdes.apicheck, ApiCheck::Full) {
+        if matches!($serdes.options.apicheck(), ApiCheck::Full) {
             $stmt
         }
     };

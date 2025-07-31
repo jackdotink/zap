@@ -1,11 +1,13 @@
+use std::rc::Rc;
+
 use crate::{
-    hir::{Event, Item},
+    hir::{Event, Item, Table},
     mir::{
         Expr,
         builder::{Builder, InitVar},
         serdes::{Des, Ser},
     },
-    shared::{ApiCheck, NetworkSide},
+    shared::{ApiCheck, NetworkSide, Options},
 };
 
 mod iter;
@@ -19,33 +21,37 @@ pub struct Server {
     pub des: Des,
 }
 
-impl Server {
-    pub fn new(apicheck: ApiCheck) -> Self {
+impl Default for Server {
+    fn default() -> Self {
         let location = "result".to_string();
+
         let ser = Ser {
-            apicheck,
-            native: false,
+            options: Rc::new(Options::default()),
+            native: true,
         };
+
         let des = Des {
-            apicheck,
-            native: false,
-            check: false,
+            options: Rc::new(Options::default()),
+            native: true,
+            check: true,
         };
 
         Server { location, ser, des }
     }
+}
 
-    pub fn item(&self, b: &mut Builder, item: &Item) {
+impl Server {
+    fn item(&self, b: &mut Builder, item: &Item) {
         match item {
             Item::Table(table) => self.table(b, table),
             Item::Event(event) => self.event(b, event),
         }
     }
 
-    fn table(&self, b: &mut Builder, table: &[(String, Item)]) {
-        for (name, item) in table {
+    pub fn table(&self, b: &mut Builder, table: &Table) {
+        for (name, item) in table.items.iter() {
             self.export(b, name, Expr::Table(vec![]));
-            self.location(name).item(b, item);
+            self.child(&table.options, name).item(b, item);
         }
     }
 
@@ -56,11 +62,17 @@ impl Server {
         }
     }
 
-    fn location(&self, name: &str) -> Self {
+    fn child(&self, options: &Rc<Options>, name: &str) -> Self {
+        let mut ser = self.ser.clone();
+        ser.options = Rc::clone(&options);
+
+        let mut des = self.des.clone();
+        des.options = Rc::clone(&options);
+
         Server {
             location: self.location.clone() + "." + name,
-            ser: self.ser.clone(),
-            des: self.des.clone(),
+            ser,
+            des,
         }
     }
 

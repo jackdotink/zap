@@ -1,11 +1,13 @@
+use std::rc::Rc;
+
 use crate::{
-    hir::{Event, Item, Type},
+    hir::{Event, Item, Table, Type},
     mir::{
         Expr,
         builder::{Builder, InitVar},
         serdes::{Des, Ser, Serdes},
     },
-    shared::{ApiCheck, NetworkSide},
+    shared::{ApiCheck, NetworkSide, Options},
 };
 
 mod iter;
@@ -19,33 +21,37 @@ pub struct Client {
     pub des: Des,
 }
 
-impl Client {
-    pub fn new(apicheck: ApiCheck) -> Self {
+impl Default for Client {
+    fn default() -> Self {
         let location = "result".to_string();
+
         let ser = Ser {
-            apicheck,
+            options: Rc::new(Options::default()),
             native: false,
         };
+
         let des = Des {
-            apicheck,
+            options: Rc::new(Options::default()),
             native: false,
             check: false,
         };
 
         Client { location, ser, des }
     }
+}
 
-    pub fn item(&self, b: &mut Builder, item: &Item) {
+impl Client {
+    fn item(&self, b: &mut Builder, item: &Item) {
         match item {
             Item::Table(table) => self.table(b, table),
             Item::Event(event) => self.event(b, event),
         }
     }
 
-    fn table(&self, b: &mut Builder, table: &[(String, Item)]) {
-        for (name, item) in table {
+    pub fn table(&self, b: &mut Builder, table: &Table) {
+        for (name, item) in table.items.iter() {
             self.export(b, name, Expr::Table(vec![]));
-            self.location(name).item(b, item);
+            self.child(&table.options, name).item(b, item);
         }
     }
 
@@ -56,12 +62,18 @@ impl Client {
         }
     }
 
-    fn location(&self, name: &str) -> Self {
+    fn child(&self, options: &Rc<Options>, name: &str) -> Self {
+        let mut ser = self.ser.clone();
+        ser.options = Rc::clone(options);
+
+        let mut des = self.des.clone();
+        des.options = Rc::clone(options);
+
         Client {
             location: self.location.clone() + "." + name,
 
-            ser: self.ser.clone(),
-            des: self.des.clone(),
+            ser,
+            des,
         }
     }
 
