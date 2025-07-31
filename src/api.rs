@@ -122,9 +122,11 @@ fn library() -> lu::Library<Config> {
         .with_function_norm("boolean", boolean)
         .with_function_norm("u8", u8)
         .with_function_norm("u16", u16)
+        .with_function_norm("u24", u24)
         .with_function_norm("u32", u32)
         .with_function_norm("i8", i8)
         .with_function_norm("i16", i16)
+        .with_function_norm("i24", i24)
         .with_function_norm("i32", i32)
         .with_function_norm("f32", f32)
         .with_function_norm("f64", f64)
@@ -315,6 +317,37 @@ extern "C-unwind" fn u16(ctx: Context) -> lu::FnReturn {
     ctx.ret_with(1)
 }
 
+extern "C-unwind" fn u24(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && !(0f64..=16777215f64).contains(&min)
+    {
+        ctx.error_msg("u24 min must be between 0 and 16777215")
+    }
+
+    if let Some(max) = max
+        && !(0f64..=16777215f64).contains(&max)
+    {
+        ctx.error_msg("u24 max must be between 0 and 16777215")
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::U24,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
 extern "C-unwind" fn u32(ctx: Context) -> lu::FnReturn {
     let min = ctx.arg_number_opt(1);
     let max = ctx.arg_number_opt(2);
@@ -402,6 +435,37 @@ extern "C-unwind" fn i16(ctx: Context) -> lu::FnReturn {
 
     ctx.push_userdata(Type::Number(NumberType {
         kind: NumberKind::I16,
+        range: Range { min, max },
+    }));
+
+    ctx.ret_with(1)
+}
+
+extern "C-unwind" fn i24(ctx: Context) -> lu::FnReturn {
+    let min = ctx.arg_number_opt(1);
+    let max = ctx.arg_number_opt(2);
+
+    if let Some(min) = min
+        && !(-8388608f64..=8388607f64).contains(&min)
+    {
+        ctx.error_msg("i24 min must be between -8388608 and 8388607")
+    }
+
+    if let Some(max) = max
+        && !(-8388608f64..=8388607f64).contains(&max)
+    {
+        ctx.error_msg("i24 max must be between -8388608 and 8388607")
+    }
+
+    if let Some(min) = min
+        && let Some(max) = max
+        && min > max
+    {
+        ctx.error_msg("min must be less than or equal to max")
+    }
+
+    ctx.push_userdata(Type::Number(NumberType {
+        kind: NumberKind::I24,
         range: Range { min, max },
     }));
 
