@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 mod api;
 mod hir;
 mod mir;
+mod options;
 mod shared;
 
 #[derive(Parser)]
@@ -38,10 +39,10 @@ fn main() {
                 }
             };
 
-            let table = hir::Table::from(table);
+            let items = hir::build(table);
 
-            let server = mir::server(&table).unwrap();
-            let client = mir::client(&table).unwrap();
+            let server = mir::server(&items.buckets);
+            let client = mir::client(&items.buckets);
 
             std::fs::create_dir_all("./zap/out").expect("failed to create zap/out directory");
             std::fs::write("./zap/out/server.luau", server).expect("failed to write server code");

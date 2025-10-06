@@ -2,116 +2,112 @@ use crate::{
     hir::Event,
     mir::{
         Expr,
-        builder::{Builder, InitVar},
-        client::Client,
+        builder::{Builder, Ctx, TVar},
+        client::{RecvCtx, des},
         serdes::Serdes,
     },
 };
 
-impl Client {
-    pub fn event_recv_iter(&self, b: &mut Builder, event: &Event) {
-        match event.data.len() {
-            0 => self.event_recv_iter_0data(b, event),
-            1 => self.event_recv_iter_1data(b, event),
-            _ => self.event_recv_iter_ndata(b, event),
+pub fn iter(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
+    match event.data.len() {
+        0 => self::iter_0data(b, recvctx, event),
+        1 => self::iter_1data(b, recvctx, event),
+        _ => self::iter_ndata(b, recvctx, event),
+    }
+}
+
+fn iter_0data(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
+    let counter = b.init(0);
+
+    let listener = b.function(|b, []| {
+        b.assign(&counter, counter.expr().add(1));
+    });
+
+    recvctx.listen(b, &listener);
+
+    let next = b.function(|b, [captured, i]| {
+        b.branch(
+            i.expr().lt(captured),
+            |b| {
+                b.ret(vec![i.expr().add(1)]);
+            },
+            |_| {},
+        );
+    });
+
+    let iter = b.function(|b, []| {
+        let captured = b.init(&counter);
+        b.assign(&counter, 0);
+        b.ret(vec![next.expr(), captured.expr(), 0.into()]);
+    });
+
+    b.export(&event.path, event.opts.casing.fmt("iter"), &iter)
+}
+
+fn queue(b: &mut Builder, recvctx: &RecvCtx, event: &Event) -> TVar {
+    let queue = b.init(Expr::Table(vec![]));
+
+    let des = des(&event.opts);
+    let data = event
+        .data
+        .iter()
+        .map(|ty| ty.des(b, &des))
+        .collect::<Vec<_>>();
+
+    let listener = b.function(|b, [buf, pos, len]| {
+        let ctx = Ctx {
+            buf: b.init(buf.expr()),
+            pos: b.init(pos.expr()),
+            len: b.init(len.expr()),
+        };
+
+        for des in data.into_iter() {
+            let value = des(b, &ctx);
+            b.call(Expr::Global("table.insert").call(vec![queue.expr(), value.expr()]));
         }
-    }
+    });
 
-    fn event_recv_iter_ndata(&self, b: &mut Builder, event: &Event) {
-        let queue = self.event_recv_queue(b, event);
-        let n = event.data.len();
+    recvctx.listen(b, &listener);
 
-        let iter = b.function(|b, []| {
-            let captured = b.expr(queue.expr());
-            b.assign(&queue, Expr::Table(vec![]));
+    queue
+}
 
-            let next = b.function(|b, [captured, i]| {
-                b.branch(
-                    captured.expr().index(i),
-                    |b| {
-                        let rets = (0..n)
-                            .map(|j| format!(", {captured}[{i} + {j}]"))
-                            .collect::<String>();
+fn iter_1data(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
+    let queue = self::queue(b, recvctx, event);
 
-                        b.stmt(format!("return {i} + {n}{rets}"));
-                    },
-                    |_| {},
-                );
-            });
+    let iter = b.function(|b, []| {
+        let captured = b.init(queue.expr());
+        b.assign(&queue, Expr::Table(vec![]));
+        b.ret(vec![captured.expr()]);
+    });
 
-            b.stmt(format!("return {next}, {captured}, 1"));
-        });
+    b.export(&event.path, event.opts.casing.fmt("iter"), &iter)
+}
 
-        self.export(b, &self.name("iter"), &iter);
-    }
+fn iter_ndata(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
+    let queue = self::queue(b, recvctx, event);
 
-    fn event_recv_iter_1data(&self, b: &mut Builder, event: &Event) {
-        let queue = self.event_recv_queue(b, event);
+    let next = b.function(|b, [captured, i]| {
+        b.branch(
+            captured.expr().index(i).eq(Expr::Nil).not(),
+            |b| {
+                let mut rets = vec![i.expr().add(event.data.len())];
 
-        let iter = b.function(|b, []| {
-            let captured = b.expr(queue.expr());
-            b.assign(&queue, Expr::Table(vec![]));
-            b.stmt(format!("return {captured}"));
-        });
+                for j in 0..event.data.len() {
+                    rets.push(captured.expr().index(i.expr().add(j)));
+                }
 
-        self.export(b, &self.name("iter"), &iter);
-    }
+                b.ret(rets);
+            },
+            |_| {},
+        );
+    });
 
-    fn event_recv_iter_0data(&self, b: &mut Builder, event: &Event) {
-        let counter = self.event_recv_counter(b, event);
+    let iter = b.function(|b, []| {
+        let captured = b.init(queue.expr());
+        b.assign(&queue, Expr::Table(vec![]));
+        b.ret(vec![next.expr(), captured.expr(), 1.into()]);
+    });
 
-        let iter = b.function(|b, []| {
-            let captured = b.expr(counter.expr());
-            b.assign(&counter, 0);
-
-            let next = b.function(|b, [captured, i]| {
-                b.branch(
-                    i.expr().lt(captured),
-                    |b| {
-                        b.stmt(format!("return {i} + 1"));
-                    },
-                    |_| {},
-                );
-            });
-
-            b.stmt(format!("return {next}, {captured}, 0"));
-        });
-
-        self.export(b, &self.name("iter"), &iter);
-    }
-
-    fn event_recv_queue(&self, b: &mut Builder, event: &Event) -> InitVar {
-        let remote = self.remote(b, event);
-        let queue = b.expr(Expr::Table(vec![]));
-
-        let des = event
-            .data
-            .iter()
-            .map(|ty| Box::new(ty.des(b, &self.des)))
-            .collect::<Vec<_>>();
-
-        let on_event = b.function(|b, [buf]| {
-            b.stmt(format!("local buf, pos = {buf}, pos"));
-
-            for des in des {
-                let value = des(b);
-                b.stmt(format!("table.insert({queue}, {value})"));
-            }
-        });
-
-        b.stmt(format!("{remote}.OnClientEvent:Connect({on_event})"));
-        queue
-    }
-
-    fn event_recv_counter(&self, b: &mut Builder, event: &Event) -> InitVar {
-        let remote = self.remote(b, event);
-        let counter = b.expr(0);
-
-        let on_event = b.function(|b, []| {
-            b.assign(&counter, counter.expr().add(1));
-        });
-
-        b.stmt(format!("{remote}.OnClientEvent:Connect({on_event})"));
-        counter
-    }
+    b.export(&event.path, event.opts.casing.fmt("iter"), &iter)
 }

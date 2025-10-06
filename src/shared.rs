@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use uuid::Uuid;
 
 #[derive(Default, Clone, Copy)]
 pub enum ApiCheck {
@@ -48,53 +48,16 @@ impl Casing {
     }
 }
 
-#[derive(lu::Userdata, Default, Clone)]
-pub struct Options {
-    parent: Option<Rc<Options>>,
-
-    apicheck: Option<ApiCheck>,
-    casing: Option<Casing>,
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Remote {
+    pub uuid: Uuid,
 }
 
-impl Options {
-    pub fn with_parent(self, parent: Rc<Options>) -> Self {
+impl Default for Remote {
+    fn default() -> Self {
         Self {
-            parent: Some(parent),
-            apicheck: self.apicheck,
-            casing: self.casing,
+            uuid: Uuid::new_v4(),
         }
-    }
-
-    pub fn with_apicheck(self, apicheck: ApiCheck) -> Self {
-        Self {
-            parent: self.parent,
-            apicheck: Some(apicheck),
-            casing: self.casing,
-        }
-    }
-
-    pub fn with_casing(self, casing: Casing) -> Self {
-        Self {
-            parent: self.parent,
-            apicheck: self.apicheck,
-            casing: Some(casing),
-        }
-    }
-
-    pub fn apicheck(&self) -> ApiCheck {
-        self.apicheck.unwrap_or_else(|| {
-            self.parent
-                .as_ref()
-                .map_or(ApiCheck::default(), |parent| parent.apicheck())
-        })
-    }
-
-    pub fn casing(&self) -> Casing {
-        self.casing.unwrap_or_else(|| {
-            self.parent
-                .as_ref()
-                .map_or(Casing::default(), |parent| parent.casing())
-        })
     }
 }
 
@@ -158,6 +121,10 @@ impl NumberKind {
             Self::F64 | Self::NaNF64 => f64::MAX,
         }
     }
+
+    pub fn is_integer(&self) -> bool {
+        !matches!(self, Self::F32 | Self::F64 | Self::NaNF32 | Self::NaNF64)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -167,6 +134,10 @@ pub struct Range {
 }
 
 impl Range {
+    pub fn new(min: Option<f64>, max: Option<f64>) -> Self {
+        Self { min, max }
+    }
+
     pub fn exact(&self) -> Option<f64> {
         if self.min == self.max { self.min } else { None }
     }

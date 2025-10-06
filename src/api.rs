@@ -1,8 +1,11 @@
-use std::{ops::ControlFlow, rc::Rc};
+use std::ops::ControlFlow;
 
-use uuid::Uuid;
+use lu::Methods;
 
-use crate::shared::{ApiCheck, Casing, NetworkSide, NumberKind, Options, Range};
+use crate::{
+    options,
+    shared::{ApiCheck, Casing, NetworkSide, NumberKind, Range, Remote},
+};
 
 #[derive(Default)]
 struct Config;
@@ -22,9 +25,13 @@ pub fn exec(source: &[u8]) -> Result<Table, String> {
 
     let mut state = lu::State::new((), lu::DefaultAllocator);
     state.open_std();
-    state.open_userdata::<Type>();
-    state.open_userdata::<Event>();
-    state.open_userdata::<Options>();
+    state.open_userdata::<Type>(Methods::default());
+    state.open_userdata::<Event>(Methods::default());
+    state.open_userdata::<OptionUserdata>(Methods::default());
+    state.open_userdata::<RemoteUserdata>(Methods::default().with_method(
+        "event",
+        lu::Function::norm("RemoteUserdata::event", RemoteUserdata::event),
+    ));
     state.open_library("zap", library());
     state.sandbox();
 
@@ -52,7 +59,7 @@ pub fn exec(source: &[u8]) -> Result<Table, String> {
             Err(format!("yielded: {trace}"))
         },
 
-        _ => table(stack, Rc::new(Options::default())),
+        _ => table(stack),
     }
 }
 
@@ -62,14 +69,14 @@ pub enum Item {
     Event(Event),
 }
 
-fn table(stack: &lu::Stack<Config>, parent: Rc<Options>) -> Result<Table, String> {
-    let mut options = Rc::new(Options::default().with_parent(parent));
+fn table(stack: &lu::Stack<Config>) -> Result<Table, String> {
+    let mut options = options::Node::from(options::Partial::default());
     let mut items = Vec::new();
 
     let result = stack.iter(-1, || {
         if stack.to_number(-2).is_some_and(|n| n == 1.0) {
-            options = match stack.to_userdata::<Options>(-1) {
-                Some(options) => Rc::new(options.borrow().clone()),
+            options = match stack.to_userdata::<OptionUserdata>(-1) {
+                Some(options) => options.borrow().0.clone(),
                 None => return ControlFlow::Break("index 1 may only contain options".to_string()),
             };
         } else {
@@ -79,11 +86,12 @@ fn table(stack: &lu::Stack<Config>, parent: Rc<Options>) -> Result<Table, String
 
             match stack.type_of(-1) {
                 lu::Type::Table => {
-                    let table = match table(stack, options.clone()) {
+                    let table = match table(stack) {
                         Ok(table) => table,
                         Err(err) => return ControlFlow::Break(err),
                     };
 
+                    table.opts.set_parent(options.clone());
                     items.push((name.to_owned(), Item::Table(table)));
                 }
 
@@ -107,7 +115,10 @@ fn table(stack: &lu::Stack<Config>, parent: Rc<Options>) -> Result<Table, String
     if let Some(err) = result {
         Err(err)
     } else {
-        Ok(Table { options, items })
+        Ok(Table {
+            opts: options,
+            items,
+        })
     }
 }
 
@@ -118,7 +129,7 @@ fn library() -> lu::Library<Config> {
 
     lu::Library::default()
         .with_function_norm("options", options)
-        .with_function_norm("event", event)
+        .with_function_norm("remote", remote)
         .with_function_norm("boolean", boolean)
         .with_function_norm("u8", u8)
         .with_function_norm("u16", u16)
@@ -143,12 +154,15 @@ fn library() -> lu::Library<Config> {
 
 #[derive(Clone)]
 pub struct Table {
-    pub options: Rc<Options>,
+    pub opts: options::Node,
     pub items: Vec<(String, Item)>,
 }
 
+#[derive(lu::Userdata)]
+pub struct OptionUserdata(options::Node);
+
 extern "C-unwind" fn options(ctx: Context) -> lu::FnReturn {
-    let mut options = Options::default();
+    let mut options = options::Partial::default();
     ctx.arg_table(1);
 
     ctx.iter(1, || {
@@ -162,7 +176,7 @@ extern "C-unwind" fn options(ctx: Context) -> lu::FnReturn {
                     _ => ctx.error_msg("apicheck must be 'none', 'some', or 'full'"),
                 };
 
-                options = options.clone().with_apicheck(value);
+                options.apicheck = Some(value)
             }
 
             Some("casing") => {
@@ -175,7 +189,7 @@ extern "C-unwind" fn options(ctx: Context) -> lu::FnReturn {
                     _ => ctx.error_msg("casing must be 'lower', 'snake', 'camel', or 'pascal'"),
                 };
 
-                options = options.clone().with_casing(value);
+                options.casing = Some(value);
             }
 
             Some(str) => ctx.error_msg(format!("unknown option: {str}")),
@@ -185,45 +199,57 @@ extern "C-unwind" fn options(ctx: Context) -> lu::FnReturn {
         ControlFlow::<()>::Continue(())
     });
 
-    ctx.push_userdata(options);
+    ctx.push_userdata(OptionUserdata(options::Node::from(options)));
     ctx.ret_with(1)
 }
 
 #[derive(lu::Userdata, Clone)]
 pub struct Event {
-    pub uuid: Uuid,
+    pub thru: Remote,
     pub from: NetworkSide,
     pub data: Vec<Type>,
 }
 
-extern "C-unwind" fn event(ctx: Context) -> lu::FnReturn {
-    let from = ctx.arg_string_str(1);
-    ctx.arg_table(2);
+#[derive(lu::Userdata)]
+pub struct RemoteUserdata(Remote);
 
-    let uuid = Uuid::new_v4();
-    let from = match from {
-        "server" => NetworkSide::Server,
-        "client" => NetworkSide::Client,
+impl RemoteUserdata {
+    extern "C-unwind" fn event(ctx: Context) -> lu::FnReturn {
+        let remote = ctx.arg_userdata::<RemoteUserdata>(1);
+        let from = ctx.arg_string_str(2);
+        ctx.arg_table(3);
 
-        _ => ctx.arg_error(1, c"must be 'server' or 'client'"),
-    };
+        let thru = remote.borrow().0.clone();
 
-    let mut data = Vec::new();
-    ctx.iter(2, || {
-        if !ctx.is_number(-2) {
-            ctx.error_msg("event data must be an array")
-        }
+        let from = match from {
+            "server" => NetworkSide::Server,
+            "client" => NetworkSide::Client,
 
-        if let Some(item) = ctx.to_userdata::<Type>(-1) {
-            data.push(item.borrow().clone());
-        } else {
-            ctx.error_msg("event data must be a type");
-        }
+            _ => ctx.arg_error(2, c"must be 'server' or 'client'"),
+        };
 
-        ControlFlow::<()>::Continue(())
-    });
+        let mut data = Vec::new();
+        ctx.iter(3, || {
+            if !ctx.is_number(-2) {
+                ctx.error_msg("event data must be an array")
+            }
 
-    ctx.push_userdata(Event { uuid, from, data });
+            if let Some(item) = ctx.to_userdata::<Type>(-1) {
+                data.push(item.borrow().clone());
+            } else {
+                ctx.error_msg("event data must be a type");
+            }
+
+            ControlFlow::<()>::Continue(())
+        });
+
+        ctx.push_userdata(Event { thru, from, data });
+        ctx.ret_with(1)
+    }
+}
+
+extern "C-unwind" fn remote(ctx: Context) -> lu::FnReturn {
+    ctx.push_userdata(RemoteUserdata(Remote::default()));
     ctx.ret_with(1)
 }
 

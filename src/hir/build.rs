@@ -1,42 +1,47 @@
+use std::collections::HashMap;
+
 use crate::{
     api,
     hir::{
-        ArrayType, BinaryStringType, BooleanType, EnumType, Event, Item, Length, MapType,
-        NumberType, SetType, StructType, Table, Type, Utf8StringType, VectorType,
+        ArrayType, BinaryStringType, BooleanType, EnumType, Event, Hir, Item, Length, MapType,
+        NumberType, SetType, StructType, Type, Utf8StringType, VectorType,
     },
-    shared::Range,
+    shared::{Range, Remote},
 };
 
-impl From<api::Item> for Item {
-    fn from(value: api::Item) -> Self {
-        match value {
-            api::Item::Table(table) => Item::Table(table.into()),
-            api::Item::Event(event) => Item::Event(event.into()),
+pub fn build(table: api::Table) -> Hir {
+    fn build(buckets: &mut HashMap<Remote, Vec<Item>>, path: String, table: api::Table) {
+        let opts = table.opts.resolved();
+
+        for (name, item) in table.items {
+            let path = format!("{path}.{name}");
+
+            match item {
+                api::Item::Table(table) => build(buckets, path, table),
+
+                api::Item::Event(api::Event { thru, from, data }) => {
+                    let data = data.into_iter().map(Type::from).collect();
+
+                    let event = Event {
+                        opts: opts.clone(),
+                        path,
+                        from,
+                        data,
+                    };
+
+                    buckets
+                        .entry(thru.clone())
+                        .or_default()
+                        .push(Item::Event(event));
+                }
+            }
         }
     }
-}
 
-impl From<api::Table> for Table {
-    fn from(value: api::Table) -> Self {
-        let options = value.options;
-        let items = value
-            .items
-            .into_iter()
-            .map(|(name, item)| (name, Item::from(item)))
-            .collect();
+    let mut buckets = HashMap::new();
+    build(&mut buckets, String::new(), table);
 
-        Table { options, items }
-    }
-}
-
-impl From<api::Event> for Event {
-    fn from(value: api::Event) -> Self {
-        let uuid = value.uuid;
-        let from = value.from;
-        let data = value.data.into_iter().map(Type::from).collect();
-
-        Event { uuid, from, data }
-    }
+    Hir { buckets }
 }
 
 impl From<api::Type> for Type {

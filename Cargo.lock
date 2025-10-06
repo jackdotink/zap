@@ -182,9 +182,9 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
 name = "lu"
-version = "0.4.1"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8084b026405e785aa5a7f5d27afcb128e79ab339aa3e2a81571e7a9214ce365e"
+checksum = "f7e4700c1ef36d686741668ad7eaf5fc124430688749b8f972cc39ffdbdd1b04"
 dependencies = [
  "libc",
  "lu-derive",
@@ -204,9 +204,9 @@ dependencies = [
 
 [[package]]
 name = "lu-sys"
-version = "0.681.3"
+version = "0.694.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8028cc7a4018bac6335982cbdcd2115f877b1f7dd67da7e4523614a72c0f9a7"
+checksum = "085c2cd507101b217a6ffecf6c84339affd166cf0220b79faba84d34ca7be3cf"
 dependencies = [
  "cmake",
  "libc",

@@ -1,27 +1,28 @@
-use std::rc::Rc;
+use std::collections::HashMap;
 
-use uuid::Uuid;
-
-use crate::shared::{NetworkSide, NumberKind, Options, Range};
+use crate::{
+    options::Options,
+    shared::{NetworkSide, NumberKind, Range, Remote},
+};
 
 mod build;
 mod size;
 
+pub use build::build;
+
+pub struct Hir {
+    pub buckets: HashMap<Remote, Vec<Item>>,
+}
+
 #[derive(Clone)]
 pub enum Item {
-    Table(Table),
     Event(Event),
 }
 
 #[derive(Clone)]
-pub struct Table {
-    pub options: Rc<Options>,
-    pub items: Vec<(String, Item)>,
-}
-
-#[derive(Clone)]
 pub struct Event {
-    pub uuid: Uuid,
+    pub opts: Options,
+    pub path: String,
     pub from: NetworkSide,
     pub data: Vec<Type>,
 }

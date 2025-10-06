@@ -9,79 +9,60 @@ struct RegistryInner {
 }
 
 #[derive(Default, Clone)]
-pub struct Registry {
+struct Registry {
     inner: Rc<RefCell<RegistryInner>>,
 }
 
 impl Registry {
-    pub fn var(&self) -> UninitVar {
+    fn var(&self) -> TVar {
         let mut inner = self.inner.borrow_mut();
 
         if let Some(var) = inner.free.pop() {
-            UninitVar {
-                var,
+            TVar {
                 reg: self.clone(),
+                var: Var { id: var },
             }
         } else {
             let var = inner.next;
             inner.next += 1;
-            UninitVar {
-                var,
+
+            TVar {
                 reg: self.clone(),
+                var: Var { id: var },
             }
         }
     }
 
-    fn free(&self, var: u16) {
-        self.inner.borrow_mut().free.push(var);
+    fn free(&self, var: Var) {
+        self.inner.borrow_mut().free.push(var.id);
     }
 }
 
 #[must_use]
-pub struct UninitVar {
-    var: u16,
+pub struct TVar {
     reg: Registry,
+    var: Var,
 }
 
-impl UninitVar {
-    pub fn init(self) -> InitVar {
-        InitVar {
-            var: self.var,
-            reg: self.reg,
-        }
-    }
-}
-
-pub struct InitVar {
-    var: u16,
-    reg: Registry,
-}
-
-impl InitVar {
+impl TVar {
     pub fn expr(&self) -> Expr {
-        Expr::Var(Var(self.var))
+        Expr::Var(self.var)
     }
 }
 
-impl From<&InitVar> for Var {
-    fn from(value: &InitVar) -> Self {
-        Var(value.var)
+impl From<&TVar> for Expr {
+    fn from(value: &TVar) -> Self {
+        value.expr()
     }
 }
 
-impl From<&InitVar> for Expr {
-    fn from(value: &InitVar) -> Self {
-        Expr::Var(Var(value.var))
+impl From<&TVar> for Var {
+    fn from(value: &TVar) -> Self {
+        value.var
     }
 }
 
-impl Display for InitVar {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", Var(self.var))
-    }
-}
-
-impl Drop for InitVar {
+impl Drop for TVar {
     fn drop(&mut self) {
         self.reg.free(self.var);
     }
@@ -107,132 +88,71 @@ impl Builder {
         }
     }
 
-    pub fn var(&mut self) -> UninitVar {
+    pub fn var(&mut self) -> TVar {
         self.reg.var()
     }
 
-    pub fn stmt(&mut self, stmt: impl ToString) {
-        let stmt = stmt.to_string();
-
-        self.out.push(Instr::Stmt { stmt });
+    pub fn instr(&mut self, instr: Instr) {
+        self.out.push(instr);
     }
 
-    pub fn assert(&mut self, expr: impl Into<Expr>, msg: impl ToString) {
+    pub fn export(&mut self, path: impl Display, name: impl Display, expr: impl Into<Expr>) {
+        let path = format!("{path}.{name}");
         let expr = expr.into();
-        let msg = msg.to_string();
 
-        self.out.push(Instr::Assert { expr, msg });
+        self.instr(Instr::Export { path, expr });
     }
 
-    pub fn alloc_k(&mut self, size: u32) {
-        self.out.push(Instr::AllocK { size });
-    }
+    pub fn init(&mut self, src: impl Into<Expr>) -> TVar {
+        let var = self.var();
+        let dst = Var::from(&var);
+        let src = src.into();
 
-    pub fn alloc_d(&mut self, size: impl Into<Expr>) {
-        let size = size.into();
+        self.instr(Instr::Init { dst, src });
 
-        self.out.push(Instr::AllocD { size });
-    }
-
-    pub fn reserve_k(&mut self, size: u32) -> InitVar {
-        let var = self.var().init();
-        let into = Var::from(&var);
-
-        self.out.push(Instr::ReserveK { into, size });
         var
     }
 
-    pub fn write_k(&mut self, func: impl Into<FuncK>, expr: impl Into<Expr>) {
-        let func = func.into();
-        let expr = expr.into();
+    pub fn assign(&mut self, dst: &TVar, src: impl Into<Expr>) {
+        let dst = Var::from(dst);
+        let src = src.into();
 
-        self.out.push(Instr::WriteK { func, expr });
+        self.instr(Instr::Assign { dst, src });
     }
 
-    pub fn write_d(
-        &mut self,
-        func: impl Into<FuncD>,
-        expr: impl Into<Expr>,
-        size: impl Into<Expr>,
-    ) {
-        let func = func.into();
-        let expr = expr.into();
-        let size = size.into();
+    pub fn assign_index(&mut self, dst: &TVar, idx: impl Into<Expr>, src: impl Into<Expr>) {
+        let dst = Var::from(dst);
+        let idx = idx.into();
+        let src = src.into();
 
-        self.out.push(Instr::WriteD { func, expr, size });
+        self.instr(Instr::AssignIndex { dst, idx, src });
     }
 
-    pub fn write_reserved_k(
-        &mut self,
-        func: impl Into<FuncK>,
-        at: impl Into<Expr>,
-        expr: impl Into<Expr>,
-    ) {
-        let func = func.into();
-        let at = at.into();
-        let expr = expr.into();
+    pub fn call(&mut self, call: Expr) {
+        debug_assert!(matches!(call, Expr::Call(..) | Expr::Namecall(..)));
 
-        self.out.push(Instr::WriteReservedK { func, at, expr });
+        self.instr(Instr::Call { call });
     }
 
-    pub fn read_k(&mut self, func: impl Into<FuncK>) -> InitVar {
-        let var = self.var().init();
-        let into = Var::from(&var);
-        let func = func.into();
+    pub fn ret(&mut self, exprs: Vec<impl Into<Expr>>) {
+        let exprs = exprs.into_iter().map(Into::into).collect();
 
-        self.out.push(Instr::ReadK { into, func });
-        var
-    }
-
-    pub fn read_d(&mut self, func: impl Into<FuncD>, size: impl Into<Expr>) -> InitVar {
-        let var = self.var().init();
-        let into = Var::from(&var);
-        let func = func.into();
-        let size = size.into();
-
-        self.out.push(Instr::ReadD { into, func, size });
-        var
-    }
-
-    pub fn expr(&mut self, expr: impl Into<Expr>) -> InitVar {
-        let var = self.var().init();
-        let into = Var::from(&var);
-        let expr = expr.into();
-
-        self.out.push(Instr::Expr { into, expr });
-        var
-    }
-
-    pub fn assign(&mut self, into: &InitVar, expr: impl Into<Expr>) {
-        let expr = expr.into();
-        let into = Var::from(into);
-
-        self.out.push(Instr::Assign { into, expr })
-    }
-
-    pub fn assign_index(&mut self, into: &InitVar, index: impl Into<Expr>, expr: impl Into<Expr>) {
-        let into = Var::from(into);
-        let index = index.into();
-        let expr = expr.into();
-
-        self.out.push(Instr::AssignIndex { into, index, expr });
+        self.instr(Instr::Return { exprs });
     }
 
     pub fn for_range(
         &mut self,
         start: impl Into<Expr>,
         end: impl Into<Expr>,
-        block: impl FnOnce(&mut Self, &InitVar),
+        block: impl FnOnce(&mut Self, &TVar),
     ) {
-        let var = self.var().init();
-        let block = self.block(|b| block(b, &var));
-
-        let into = Var::from(&var);
+        let dst = self.var();
         let start = start.into();
         let end = end.into();
+        let block = self.block(|b| block(b, &dst));
 
-        self.out.push(Instr::ForRange {
-            into,
+        self.instr(Instr::ForRange {
+            dst: dst.var,
             start,
             end,
             block,
@@ -242,17 +162,16 @@ impl Builder {
     pub fn for_table(
         &mut self,
         table: impl Into<Expr>,
-        block: impl FnOnce(&mut Self, &InitVar, &InitVar),
+        block: impl FnOnce(&mut Self, &TVar, &TVar),
     ) {
-        let index = self.var().init();
-        let value = self.var().init();
-        let block = self.block(|b| block(b, &index, &value));
-
+        let idx = self.var();
+        let val = self.var();
         let table = table.into();
+        let block = self.block(|b| block(b, &idx, &val));
 
-        self.out.push(Instr::ForTable {
-            index: Var::from(&index),
-            value: Var::from(&value),
+        self.instr(Instr::ForTable {
+            idx: idx.var,
+            val: val.var,
             table,
             block,
         });
@@ -268,7 +187,7 @@ impl Builder {
         let then_block = self.block(then_block);
         let else_block = self.block(else_block);
 
-        self.out.push(Instr::Branch {
+        self.instr(Instr::Branch {
             cond,
             then_block,
             else_block,
@@ -277,34 +196,152 @@ impl Builder {
 
     pub fn function<const ARGS: usize>(
         &mut self,
-        block: impl FnOnce(&mut Self, &[InitVar; ARGS]),
-    ) -> InitVar {
-        let into = self.var().init();
-        let vars: [_; ARGS] = std::array::from_fn(|_| self.var().init());
-        let body = self.block(|b| block(b, &vars));
-        let args = vars.iter().map(Var::from).collect();
+        block: impl FnOnce(&mut Self, &[TVar; ARGS]),
+    ) -> TVar {
+        let dst = self.var();
+        let vars: [_; ARGS] = std::array::from_fn(|_| self.var());
+        let block = self.block(|b| block(b, &vars));
+        let args = vars.map(|v| v.var).to_vec();
 
-        self.out.push(Instr::Function {
-            into: Var::from(&into),
+        self.instr(Instr::Function {
+            dst: dst.var,
             args,
-            body,
+            block,
         });
 
-        into
+        dst
     }
 
-    pub fn function_n(&mut self, n: usize, block: impl FnOnce(&mut Self, &[InitVar])) -> InitVar {
-        let into = self.var().init();
-        let vars = Vec::from_iter((0..n).map(|_| self.var().init()));
-        let body = self.block(|b| block(b, &vars));
-        let args = vars.iter().map(Var::from).collect();
+    pub fn function_n(&mut self, n: usize, block: impl FnOnce(&mut Self, &[TVar])) -> TVar {
+        let dst = self.var();
+        let vars: Vec<TVar> = (0..n).map(|_| self.var()).collect();
+        let block = self.block(|b| block(b, &vars));
+        let args = vars.iter().map(|v| v.var).collect();
 
-        self.out.push(Instr::Function {
-            into: Var::from(&into),
+        self.instr(Instr::Function {
+            dst: dst.var,
             args,
-            body,
+            block,
         });
 
-        into
+        dst
+    }
+}
+
+pub struct Ctx {
+    pub buf: TVar,
+    pub pos: TVar,
+    pub len: TVar,
+}
+
+impl Builder {
+    pub fn check(&mut self, ctx: &Ctx, size: impl Into<Expr>) {
+        let buf = ctx.buf.var;
+        let pos = ctx.pos.var;
+        let len = ctx.len.var;
+        let size = size.into();
+
+        self.instr(Instr::Check {
+            buf,
+            pos,
+            len,
+            size,
+        });
+    }
+
+    pub fn reserve(&mut self, ctx: &Ctx, size: impl Into<Expr>) -> TVar {
+        let dst = self.var();
+        let pos = ctx.pos.var;
+        let size = size.into();
+
+        self.instr(Instr::Reserve {
+            dst: dst.var,
+            pos,
+            size,
+        });
+
+        dst
+    }
+
+    pub fn write_k(&mut self, ctx: &Ctx, func: FuncK, src: impl Into<Expr>) {
+        let buf = ctx.buf.var;
+        let pos = ctx.pos.var;
+        let src = src.into();
+
+        self.instr(Instr::WriteK {
+            func,
+            buf,
+            pos,
+            src,
+        });
+    }
+
+    pub fn write_d(&mut self, ctx: &Ctx, func: FuncD, src: impl Into<Expr>, size: impl Into<Expr>) {
+        let buf = ctx.buf.var;
+        let pos = ctx.pos.var;
+        let src = src.into();
+        let size = size.into();
+
+        self.instr(Instr::WriteD {
+            func,
+            buf,
+            pos,
+            src,
+            size,
+        });
+    }
+
+    pub fn write_reserved_k(&mut self, ctx: &Ctx, func: FuncK, src: impl Into<Expr>) {
+        let buf = ctx.buf.var;
+        let pos = ctx.pos.var;
+        let src = src.into();
+
+        self.instr(Instr::WriteReservedK {
+            func,
+            buf,
+            pos,
+            src,
+        });
+    }
+
+    pub fn read_k(&mut self, ctx: &Ctx, func: FuncK) -> TVar {
+        let buf = ctx.buf.var;
+        let pos = ctx.pos.var;
+        let var = self.var();
+        let dst = var.var;
+
+        self.instr(Instr::ReadK {
+            func,
+            buf,
+            pos,
+            dst,
+        });
+
+        var
+    }
+
+    pub fn read_d(&mut self, ctx: &Ctx, func: FuncD, size: impl Into<Expr>) -> TVar {
+        let buf = ctx.buf.var;
+        let pos = ctx.pos.var;
+        let size = size.into();
+        let var = self.var();
+        let dst = var.var;
+
+        self.instr(Instr::ReadD {
+            func,
+            buf,
+            pos,
+            size,
+            dst,
+        });
+
+        var
+    }
+}
+
+impl Builder {
+    pub fn assert(&mut self, cond: impl Into<Expr>, msg: impl Into<String>) {
+        let error = Expr::Global("error").call(vec![Expr::from(msg.into())]);
+        self.branch(cond.into().not(), |b| b.call(error), |_| {})
     }
 }

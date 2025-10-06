@@ -1,52 +1,50 @@
 use crate::{
     hir::Event,
-    mir::{builder::Builder, serdes::Serdes, server::Server},
+    mir::{
+        builder::Builder,
+        serdes::Serdes,
+        server::{SendCtx, ser},
+    },
 };
 
-impl Server {
-    pub fn event_send(&self, b: &mut Builder, event: &Event) {
-        match event.data.len() {
-            0 => self.event_send_0data(b, event),
-            _ => self.event_send_ndata(b, event),
+pub fn event(b: &mut Builder, sendctx: &SendCtx, event: &Event) {
+    match event.data.len() {
+        0 => self::send_0data(b, sendctx, event),
+        _ => self::send_ndata(b, sendctx, event),
+    }
+}
+
+fn send_0data(b: &mut Builder, sendctx: &SendCtx, event: &Event) {
+    let send = b.function(|b, [plr]| {
+        let ctx = sendctx.load_ctx(b);
+        sendctx.write_idx(b, &ctx);
+        sendctx.send(b, plr, &ctx);
+        sendctx.save_ctx(b, &ctx);
+    });
+
+    b.export(&event.path, event.opts.casing.fmt("send"), &send);
+}
+
+fn send_ndata(b: &mut Builder, sendctx: &SendCtx, event: &Event) {
+    let ser = ser(&event.opts);
+    let data = event
+        .data
+        .iter()
+        .map(|ty| ty.ser(b, &ser))
+        .collect::<Vec<_>>();
+
+    let send = b.function_n(data.len() + 1, |b, args| {
+        let (plr, args) = args.split_first().unwrap();
+        let ctx = sendctx.load_ctx(b);
+
+        sendctx.write_idx(b, &ctx);
+        for (ser, arg) in data.into_iter().zip(args) {
+            ser(b, &ctx, arg.expr());
         }
-    }
 
-    fn event_send_ndata(&self, b: &mut Builder, event: &Event) {
-        let remote = self.remote(b, event);
-        let n = event.data.len();
+        sendctx.send(b, plr, &ctx);
+        sendctx.save_ctx(b, &ctx);
+    });
 
-        let ser = event
-            .data
-            .iter()
-            .map(|ty| ty.ser(b, &self.ser))
-            .collect::<Vec<_>>();
-
-        let send = b.function_n(n, |b, args| {
-            let player = &args[0];
-            b.stmt("pos = 0");
-
-            for i in 0..n {
-                let arg = &args[i + 1];
-                let ser = &ser[i];
-
-                ser(b, arg.expr());
-            }
-
-            b.stmt("local out = buffer.create(pos)");
-            b.stmt("buffer.copy(out, 0, buf, 0, pos)");
-            b.stmt(format!("{remote}:FireClient({player}, out)"));
-        });
-
-        self.export(b, &self.name("send"), &send);
-    }
-
-    fn event_send_0data(&self, b: &mut Builder, event: &Event) {
-        let remote = self.remote(b, event);
-
-        let send = b.function(|b, [player]| {
-            b.stmt(format!("{remote}:FireClient({player})"));
-        });
-
-        self.export(b, &self.name("send"), &send);
-    }
+    b.export(&event.path, event.opts.casing.fmt("send"), &send);
 }

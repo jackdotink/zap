@@ -1,3 +1,7 @@
+declare class ZapRemote
+	function event(self, from: "server" | "client", data: { ZapType }): ZapEvent
+end
+
 declare class ZapType
 end
 
@@ -41,7 +45,7 @@ declare zap: {
 	map: (ZapType, ZapType, min: number?, max: number?) -> ZapType,
 	struct: ({ [string]: ZapType }, min: number?, max: number?) -> ZapType,
 
-	event: (from: "server" | "client", { ZapType }) -> ZapEvent,
+	remote: () -> ZapRemote,
 
 	options: ({
 		casing: "lower" | "camel" | "pascal" | "snake"?,
