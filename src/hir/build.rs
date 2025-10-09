@@ -1,47 +1,39 @@
-use std::collections::HashMap;
-
 use crate::{
     api,
     hir::{
         ArrayType, BinaryStringType, BooleanType, EnumType, Event, Hir, Item, Length, MapType,
-        NumberType, SetType, StructType, Type, Utf8StringType, VectorType,
+        NumberType, SetType, StructType, Table, Type, Utf8StringType, VectorType,
     },
-    shared::{Range, Remote},
+    shared::Range,
 };
 
 pub fn build(table: api::Table) -> Hir {
-    fn build(buckets: &mut HashMap<Remote, Vec<Item>>, path: String, table: api::Table) {
-        let opts = table.opts.resolved();
-
-        for (name, item) in table.items {
-            let path = format!("{path}.{name}");
-
-            match item {
-                api::Item::Table(table) => build(buckets, path, table),
-
-                api::Item::Event(api::Event { thru, from, data }) => {
-                    let data = data.into_iter().map(Type::from).collect();
-
-                    let event = Event {
-                        opts: opts.clone(),
-                        path,
-                        from,
-                        data,
-                    };
-
-                    buckets
-                        .entry(thru.clone())
-                        .or_default()
-                        .push(Item::Event(event));
-                }
-            }
-        }
+    Hir {
+        table: table.into(),
     }
+}
 
-    let mut buckets = HashMap::new();
-    build(&mut buckets, String::new(), table);
+impl From<api::Table> for Table {
+    fn from(value: api::Table) -> Self {
+        let opts = value.opts.resolved();
+        let mut items = Vec::new();
 
-    Hir { buckets }
+        for (name, item) in value.items {
+            let item = match item {
+                api::Item::Table(table) => Item::Table(table.into()),
+                api::Item::Event(event) => Item::Event(Event {
+                    opts: opts.clone(),
+                    thru: event.thru,
+                    from: event.from,
+                    data: event.data.into_iter().map(|ty| Type::from(ty)).collect(),
+                }),
+            };
+
+            items.push((name, item))
+        }
+
+        Table { items }
+    }
 }
 
 impl From<api::Type> for Type {

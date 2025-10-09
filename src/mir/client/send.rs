@@ -7,14 +7,14 @@ use crate::{
     },
 };
 
-pub fn event(b: &mut Builder, sendctx: &SendCtx, event: &Event) {
+pub fn event(b: &mut Builder, sendctx: &SendCtx, path: &str, event: &Event) {
     match event.data.len() {
-        0 => self::send_0data(b, sendctx, event),
-        _ => self::send_ndata(b, sendctx, event),
+        0 => self::send_0data(b, sendctx, path, event),
+        _ => self::send_ndata(b, sendctx, path, event),
     }
 }
 
-fn send_0data(b: &mut Builder, sendctx: &SendCtx, event: &Event) {
+fn send_0data(b: &mut Builder, sendctx: &SendCtx, path: &str, event: &Event) {
     let send = b.function(|b, []| {
         let ctx = sendctx.load_ctx(b);
         sendctx.write_idx(b, &ctx);
@@ -22,10 +22,10 @@ fn send_0data(b: &mut Builder, sendctx: &SendCtx, event: &Event) {
         sendctx.save_ctx(b, &ctx);
     });
 
-    b.export(&event.path, event.opts.casing.fmt("send"), &send);
+    b.export(path, event.opts.casing.fmt("send"), &send);
 }
 
-fn send_ndata(b: &mut Builder, sendctx: &SendCtx, event: &Event) {
+fn send_ndata(b: &mut Builder, sendctx: &SendCtx, path: &str, event: &Event) {
     let ser = ser(&event.opts);
     let data = event
         .data
@@ -45,5 +45,18 @@ fn send_ndata(b: &mut Builder, sendctx: &SendCtx, event: &Event) {
         sendctx.save_ctx(b, &ctx);
     });
 
-    b.export(&event.path, event.opts.casing.fmt("send"), &send);
+    b.export(path, event.opts.casing.fmt("send"), &send);
+}
+
+pub fn interface(s: &mut String, event: &Event) -> std::fmt::Result {
+    use std::fmt::Write;
+
+    let args = event
+        .data
+        .iter()
+        .map(|ty| ty.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    write!(s, "{{ send: ({args}) -> () }}",)
 }

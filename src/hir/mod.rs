@@ -1,28 +1,35 @@
-use std::collections::HashMap;
-
 use crate::{
     options::Options,
     shared::{NetworkSide, NumberKind, Range, Remote},
 };
 
+mod buckets;
 mod build;
+mod display;
 mod size;
 
+pub use buckets::Buckets;
 pub use build::build;
 
 pub struct Hir {
-    pub buckets: HashMap<Remote, Vec<Item>>,
+    pub table: Table,
+}
+
+#[derive(Clone)]
+pub struct Table {
+    pub items: Vec<(String, Item)>,
 }
 
 #[derive(Clone)]
 pub enum Item {
+    Table(Table),
     Event(Event),
 }
 
 #[derive(Clone)]
 pub struct Event {
     pub opts: Options,
-    pub path: String,
+    pub thru: Remote,
     pub from: NetworkSide,
     pub data: Vec<Type>,
 }
@@ -123,16 +130,6 @@ impl Length {
             NumberKind::U16
         } else {
             NumberKind::U32
-        }
-    }
-
-    pub fn number_type(&self) -> NumberType {
-        NumberType {
-            kind: self.kind(),
-            range: Range {
-                min: Some(self.min as f64),
-                max: self.max.map(|max| max as f64),
-            },
         }
     }
 }

@@ -41,8 +41,8 @@ fn main() {
 
             let items = hir::build(table);
 
-            let server = mir::server(&items.buckets);
-            let client = mir::client(&items.buckets);
+            let server = mir::server(&items);
+            let client = mir::client(&items);
 
             std::fs::create_dir_all("./zap/out").expect("failed to create zap/out directory");
             std::fs::write("./zap/out/server.luau", server).expect("failed to write server code");

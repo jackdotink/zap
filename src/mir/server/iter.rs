@@ -8,14 +8,14 @@ use crate::{
     },
 };
 
-pub fn iter(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
+pub fn iter(b: &mut Builder, recvctx: &RecvCtx, path: &str, event: &Event) {
     match event.data.len() {
-        0 => self::iter_0data(b, recvctx, event),
-        _ => self::iter_ndata(b, recvctx, event),
+        0 => self::iter_0data(b, recvctx, path, event),
+        _ => self::iter_ndata(b, recvctx, path, event),
     }
 }
 
-fn iter_0data(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
+fn iter_0data(b: &mut Builder, recvctx: &RecvCtx, path: &str, event: &Event) {
     let queue = b.init(Expr::Table(vec![]));
 
     let listener = b.function(|b, [plr]| {
@@ -30,10 +30,10 @@ fn iter_0data(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
         b.ret(vec![captured.expr()]);
     });
 
-    b.export(&event.path, event.opts.casing.fmt("iter"), &iter)
+    b.export(path, event.opts.casing.fmt("iter"), &iter)
 }
 
-fn iter_ndata(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
+fn iter_ndata(b: &mut Builder, recvctx: &RecvCtx, path: &str, event: &Event) {
     let queue = b.init(Expr::Table(vec![]));
 
     let des = des(&event.opts);
@@ -82,5 +82,25 @@ fn iter_ndata(b: &mut Builder, recvctx: &RecvCtx, event: &Event) {
         b.ret(vec![next.expr(), captured.expr(), 1.into()]);
     });
 
-    b.export(&event.path, event.opts.casing.fmt("iter"), &iter)
+    b.export(path, event.opts.casing.fmt("iter"), &iter)
+}
+
+pub fn interface(s: &mut String, event: &Event) -> std::fmt::Result {
+    use std::fmt::Write;
+
+    match event.data.len() {
+        0 => write!(s, "{{ iter: () -> {{Player}} }}"),
+        _ => {
+            let args = event
+                .data
+                .iter()
+                .map(|ty| format!(", {ty}"))
+                .collect::<String>();
+
+            write!(
+                s,
+                "{{ iter: () -> (({{ any }}, number?) -> (number?, Player{args}), {{ any }}) }}"
+            )
+        }
+    }
 }

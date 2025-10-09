@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-
 use crate::{
-    hir::Item,
+    hir::{Buckets, Hir, Item, Table},
     mir::{
         Expr,
         builder::{Builder, Ctx, TVar},
@@ -77,7 +75,7 @@ impl SendCtx<'_> {
     }
 }
 
-pub fn server(buckets: &HashMap<Remote, Vec<Item>>) -> String {
+pub fn server(hir: &Hir) -> String {
     let mut b = Builder::default();
     let serverctx = ServerCtx {
         global_ctx: Ctx {
@@ -87,33 +85,38 @@ pub fn server(buckets: &HashMap<Remote, Vec<Item>>) -> String {
         },
     };
 
-    self::buckets(&mut b, &serverctx, buckets);
+    self::buckets(&mut b, &serverctx, hir.buckets());
+
+    let mut interface = String::new();
+    self::interface(&mut interface, &hir.table).unwrap();
 
     format!(
-        "{}{}{}",
+        "{}{}{}::{}",
         include_str!("../../header.luau"),
         b.build(),
-        include_str!("../../footer.luau")
+        include_str!("../../footer.luau"),
+        interface
     )
 }
 
-fn buckets(b: &mut Builder, serverctx: &ServerCtx, buckets: &HashMap<Remote, Vec<Item>>) {
+fn buckets(b: &mut Builder, serverctx: &ServerCtx, buckets: Buckets) {
     for (remote, items) in buckets {
-        self::remote(b, serverctx, remote, items);
+        self::remote(b, serverctx, &remote, &items);
     }
 }
 
-fn remote(b: &mut Builder, serverctx: &ServerCtx, remote: &Remote, items: &[Item]) {
+fn remote(b: &mut Builder, serverctx: &ServerCtx, remote: &Remote, items: &[(String, &Item)]) {
     let uuid = remote.uuid.to_string();
 
     let mut recv = Vec::new();
     let mut send = Vec::new();
 
-    for item in items {
+    for (path, item) in items {
         match item {
+            Item::Table(_) => unreachable!(),
             Item::Event(event) => match event.from {
-                NetworkSide::Client => recv.push(item),
-                NetworkSide::Server => send.push(item),
+                NetworkSide::Client => recv.push((path, item)),
+                NetworkSide::Server => send.push((path, item)),
             },
         }
     }
@@ -126,11 +129,12 @@ fn remote(b: &mut Builder, serverctx: &ServerCtx, remote: &Remote, items: &[Item
         item_idx: 0,
     };
 
-    for item in recv {
+    for (path, item) in recv {
         recvctx.item_idx += 1;
 
         match item {
-            Item::Event(event) => iter::iter(b, &recvctx, event),
+            Item::Table(_) => unreachable!(),
+            Item::Event(event) => iter::iter(b, &recvctx, path, event),
         }
     }
 
@@ -141,11 +145,12 @@ fn remote(b: &mut Builder, serverctx: &ServerCtx, remote: &Remote, items: &[Item
         ctx: &serverctx.global_ctx,
     };
 
-    for item in send {
+    for (path, item) in send {
         sendctx.item_idx += 1;
 
         match item {
-            Item::Event(event) => send::event(b, &sendctx, event),
+            Item::Table(_) => unreachable!(),
+            Item::Event(event) => send::event(b, &sendctx, path, event),
         }
     }
 
@@ -172,6 +177,28 @@ fn remote(b: &mut Builder, serverctx: &ServerCtx, remote: &Remote, items: &[Item
             .index("OnServerEvent")
             .namecall("Connect", vec![listener.expr()]),
     );
+}
+
+fn interface(s: &mut String, table: &Table) -> std::fmt::Result {
+    use std::fmt::Write;
+
+    write!(s, "{{ ")?;
+
+    for (name, item) in &table.items {
+        write!(s, "{name}: ")?;
+
+        match item {
+            Item::Table(table) => interface(s, table)?,
+            Item::Event(event) => match event.from {
+                NetworkSide::Client => self::iter::interface(s, event)?,
+                NetworkSide::Server => self::send::interface(s, event)?,
+            },
+        }
+
+        write!(s, ", ")?;
+    }
+
+    write!(s, " }}")
 }
 
 fn ser(opts: &Options) -> Ser {
