@@ -1,5 +1,5 @@
 use crate::{
-    hir::Event,
+    hir::{Event, Size},
     mir::{
         Expr,
         builder::{Builder, Ctx},

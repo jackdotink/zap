@@ -1,5 +1,5 @@
 use crate::{
-    hir::{Buckets, Hir, Item, Table},
+    hir::{Buckets, Hir, Item, Size, SizeOf, Table},
     mir::{
         Expr,
         builder::{Builder, Ctx, TVar},
@@ -129,12 +129,23 @@ fn remote(b: &mut Builder, serverctx: &ServerCtx, remote: &Remote, items: &[(Str
         item_idx: 0,
     };
 
+    let mut max_recv_size = Size::default();
+
     for (path, item) in recv {
         recvctx.item_idx += 1;
 
         match item {
             Item::Table(_) => unreachable!(),
             Item::Event(event) => iter::iter(b, &recvctx, path, event),
+        }
+
+        let size = match item {
+            Item::Table(_) => unreachable!(),
+            Item::Event(event) => event.data.size_of(),
+        };
+
+        if size > max_recv_size {
+            max_recv_size = size;
         }
     }
 
@@ -160,6 +171,10 @@ fn remote(b: &mut Builder, serverctx: &ServerCtx, remote: &Remote, items: &[(Str
             pos: b.init(0),
             len: b.init(Expr::Global("buffer.len").call(vec![buf.expr()])),
         };
+
+        if let Some(max) = max_recv_size.max {
+            b.assert(ctx.len.expr().le(max), "packet too large");
+        }
 
         let idx = b.read_k(&ctx, recv_item_kind.into());
         b.call(recvctx.jump_tbl.expr().index(&idx).call(vec![

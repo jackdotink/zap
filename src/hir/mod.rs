@@ -10,6 +10,7 @@ mod size;
 
 pub use buckets::Buckets;
 pub use build::build;
+pub use size::{Size, SizeOf};
 
 pub struct Hir {
     pub table: Table,
