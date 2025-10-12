@@ -90,16 +90,6 @@ impl From<u32> for Size {
     }
 }
 
-impl Size {
-    pub fn is_exact(&self) -> Option<u32> {
-        if Some(self.min) == self.max {
-            self.max
-        } else {
-            None
-        }
-    }
-}
-
 pub trait SizeOf {
     fn size_of(&self) -> Size;
 }
