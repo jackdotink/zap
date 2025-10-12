@@ -291,9 +291,15 @@ impl Builder {
         });
     }
 
-    pub fn write_reserved_k(&mut self, ctx: &Ctx, func: FuncK, src: impl Into<Expr>) {
+    pub fn write_reserved_k(
+        &mut self,
+        ctx: &Ctx,
+        func: FuncK,
+        pos: impl Into<Expr>,
+        src: impl Into<Expr>,
+    ) {
         let buf = ctx.buf.var;
-        let pos = ctx.pos.var;
+        let pos = pos.into();
         let src = src.into();
 
         self.instr(Instr::WriteReservedK {

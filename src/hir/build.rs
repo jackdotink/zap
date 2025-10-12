@@ -25,7 +25,7 @@ impl From<api::Table> for Table {
                     opts: opts.clone(),
                     thru: event.thru,
                     from: event.from,
-                    data: event.data.into_iter().map(|ty| Type::from(ty)).collect(),
+                    data: event.data.into_iter().map(Type::from).collect(),
                 }),
             };
 

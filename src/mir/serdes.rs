@@ -181,8 +181,8 @@ impl Serdes for hir::BooleanType {
 
     fn des<'ty, 'b, 'des: 'ty>(
         &'ty self,
-        b: &'b mut Builder,
-        des: &'des Des,
+        _: &'b mut Builder,
+        _: &'des Des,
     ) -> impl FnOnce(&mut Builder, &Ctx) -> TVar + use<'ty, 'des> + 'ty {
         move |b: &mut Builder, ctx: &Ctx| {
             let value = b.read_k(ctx, FuncK::U8);
@@ -194,7 +194,7 @@ impl Serdes for hir::BooleanType {
 impl Serdes for hir::NumberType {
     fn ser<'ty, 'b, 'ser: 'ty>(
         &'ty self,
-        b: &'b mut Builder,
+        _: &'b mut Builder,
         ser: &'ser Ser,
     ) -> impl FnOnce(&mut Builder, &Ctx, Expr) + use<'ty, 'ser> + 'ty {
         move |b: &mut Builder, ctx: &Ctx, from: Expr| {
@@ -208,7 +208,7 @@ impl Serdes for hir::NumberType {
 
     fn des<'ty, 'b, 'des: 'ty>(
         &'ty self,
-        b: &'b mut Builder,
+        _: &'b mut Builder,
         des: &'des Des,
     ) -> impl FnOnce(&mut Builder, &Ctx) -> TVar + use<'ty, 'des> + 'ty {
         move |b: &mut Builder, ctx: &Ctx| {
@@ -281,7 +281,7 @@ impl Serdes for hir::VectorType {
 impl Serdes for hir::BinaryStringType {
     fn ser<'ty, 'b, 'ser: 'ty>(
         &'ty self,
-        b: &'b mut Builder,
+        _: &'b mut Builder,
         ser: &'ser Ser,
     ) -> impl FnOnce(&mut Builder, &Ctx, Expr) + use<'ty, 'ser> + 'ty {
         move |b: &mut Builder, ctx: &Ctx, from: Expr| {
@@ -296,7 +296,7 @@ impl Serdes for hir::BinaryStringType {
 
     fn des<'ty, 'b, 'des: 'ty>(
         &'ty self,
-        b: &'b mut Builder,
+        _: &'b mut Builder,
         des: &'des Des,
     ) -> impl FnOnce(&mut Builder, &Ctx) -> TVar + use<'ty, 'des> + 'ty {
         move |b: &mut Builder, ctx: &Ctx| {
@@ -309,7 +309,7 @@ impl Serdes for hir::BinaryStringType {
 impl Serdes for hir::Utf8StringType {
     fn ser<'ty, 'b, 'ser: 'ty>(
         &'ty self,
-        b: &'b mut Builder,
+        _: &'b mut Builder,
         ser: &'ser Ser,
     ) -> impl FnOnce(&mut Builder, &Ctx, Expr) + use<'ty, 'ser> + 'ty {
         move |b: &mut Builder, ctx: &Ctx, from: Expr| {
@@ -331,7 +331,7 @@ impl Serdes for hir::Utf8StringType {
 
     fn des<'ty, 'b, 'des: 'ty>(
         &'ty self,
-        b: &'b mut Builder,
+        _: &'b mut Builder,
         des: &'des Des,
     ) -> impl FnOnce(&mut Builder, &Ctx) -> TVar + use<'ty, 'des> + 'ty {
         move |b: &mut Builder, ctx: &Ctx| {
@@ -411,7 +411,7 @@ impl Serdes for hir::SetType {
             });
 
             ser.check_range(b, len_var.expr(), self.len.into());
-            b.write_reserved_k(ctx, self.len.kind().into(), &len_var);
+            b.write_reserved_k(ctx, self.len.kind().into(), &len_pos, &len_var);
         }
     }
 
@@ -460,7 +460,7 @@ impl Serdes for hir::MapType {
             });
 
             ser.check_range(b, len_var.expr(), self.len.into());
-            b.write_reserved_k(ctx, self.len.kind().into(), &len_var);
+            b.write_reserved_k(ctx, self.len.kind().into(), &len_pos, &len_var);
         }
     }
 

@@ -111,7 +111,7 @@ enum Instr {
     WriteReservedK {
         func: FuncK,
         buf: Var,
-        pos: Var,
+        pos: Expr,
         src: Expr,
     },
 
